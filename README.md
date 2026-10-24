@@ -49,7 +49,6 @@ Planned: SQLite, Tailwind, React Router, TanStack Query.
 frontend/   React + Vite app
 backend/    FastAPI app (app/), tests (tests/)
 docs/       STATE.md — compact project state
-CLAUDE.md   AI-assistant context and rules
 ```
 
 ## Setup

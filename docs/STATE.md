@@ -51,9 +51,13 @@ Other endpoint: `GET /health` → `{"status": "ok"}`.
 
 ## Existing frontend structure (frontend/src/)
 
-- `App.tsx` — URL input, Analyze button, result card (shows title, seller, price, MOQ, source, mode badge)
-- `api.ts` — `analyze(url)` fetch + TS types (only a subset of Product; not yet updated for P2 fields)
-- `main.tsx`, `index.css` — bootstrap and plain CSS (no Tailwind yet)
+Rebuilt against the PRD investigation API (Tailwind, React Router, TanStack Query, Lucide).
+- `pages/` — NewInvestigation (form), Investigation (6-stage progress + follow-up), Report, History
+- `components/` — report widgets per PRD A4 (OutcomeBanner, ProductProfile, RequirementCheckCard, CertificationComparison, CostBreakdown, EvidenceDrawer, StatusBadge, ...)
+- `types.ts` — API types (B3/B5); `api/index.ts` picks `mockApi` or `httpApi` via `VITE_USE_MOCK`
+- `api/mock.ts` — in-browser fake BACKEND (labelled demo fixtures, placeholder rates); delete when real endpoints exist
+- `api/http.ts` — real client for `/api/investigations*` (backend does NOT implement these yet; `/cancel` and `GET /api/investigations` list are additions to the PRD)
+- The old `/api/v1/analyze` call is no longer used by the frontend (backend route unchanged).
 
 ## Environment variables (names only)
 
@@ -69,7 +73,8 @@ Frontend (`frontend/.env`): `VITE_API_BASE_URL`.
 - no tariff/landed cost yet
 - no final risk engine yet
 - TinyFish `/v1/automation/run` path is inferred from docs; not yet verified against a live key
-- frontend displays only a few Product fields
+- frontend runs on mock data until the backend implements the investigation API (PRD B3)
+- frontend has no "Enter details manually" fallback for blocked pages (needs a backend endpoint)
 
 ## Next task
 
