@@ -179,7 +179,77 @@ Code: `app/decision/cost_config.py` (`max_age_days`, `version`, `effective_date`
 - Automatic FX provider.
 - Making `today` required once the investigation flow supplies it.
 
-Section 6: reserved for the verification step, not yet written.
+## 6. Verification — Part 1: normalisation rules (proposed, to confirm)
+
+Code: `app/decision/verification_config.py`, `app/decision/verification_normalizers.py`. Values:
+`app/decision/verification_config.yaml`.
+
+**Registration number normalisation:**
+
+- Strip case, spaces, hyphens and slashes.
+- Compare the stripped strings exactly. No fuzzy matching.
+- Example: "R-41234567", "r41234567" and "R 41 234 567" all normalise to "R41234567".
+
+**Name normalisation (manufacturer, factory_location, brand, category):**
+
+- Unicode NFKD normalisation, then encode as ASCII ignoring errors.
+- Lowercase.
+- Remove punctuation (keep only letters, digits and spaces).
+- Remove legal suffixes from the configured list (whole-word match only, after splitting into
+  tokens).
+- Collapse whitespace and strip.
+- Sort tokens alphabetically, so word-order differences don't produce a mismatch.
+- Empty string after normalisation is treated as a missing value (unknown).
+
+**Model normalisation and wildcard matching:**
+
+- Same steps as name normalisation, except tokens are NOT sorted (model numbers are
+  order-sensitive).
+- Wildcard characters: `*` (zero or more characters), `?` (exactly one character), `x` or `X` at
+  the end of a token (exactly one digit). Example: "BT-1xx" matches "BT-100" through "BT-199";
+  "BT-1*" matches anything starting "BT-1"; "BT-1?" matches exactly "BT-10" through "BT-19".
+- A scope entry is a wildcard pattern if it contains `*`, `?` or a trailing x/X token; otherwise
+  it is an exact match after normalisation.
+- Matching is case-insensitive on the normalised strings.
+
+Note: wildcard patterns are data, not code. Never use `eval` or `exec`.
+
+### Part 2: comparison and overall result
+
+Code: `app/decision/verification_engine.py`.
+
+**Reliable record.** A record is reliable only when `source_type == "official_portal"` AND
+`excerpt` is non-empty AND `evidence_id` is present. Anything else is not reliable. On an
+unreliable record (including `record is None`), every field result is `unknown`, never
+`mismatch` — absence of evidence yields `unverified`, never `contradiction_detected`.
+
+**Required fields:** `registration_no`, `manufacturer`, `model_scope`, `validity`.
+**Optional fields:** `factory_location`, `category`, `brand`.
+
+**A value missing on either side (claim or record) is `unknown` for that field** — this rule
+is the same for every field, including `registration_no`: a claim with no registration number,
+or a record with none, is `unknown`, not `mismatch`.
+
+**Overall result (first match wins):**
+
+1. Any `mismatch` on a required field, against a reliable record -> `contradiction_detected`.
+2. Mismatch only on optional field(s) (no required mismatch) -> `unverified`, with the mismatched
+   fields listed in `conflicts`.
+3. Any required field `unknown` or `partial` -> `unverified`.
+4. All required fields `match` and the record is currently valid -> `verified`.
+
+**Validity.** Evaluated against the `as_of` date passed in by the caller, never the clock.
+`as_of` after `valid_to`, `as_of` before `valid_from`, or `status` in `inactive_statuses` ->
+validity `mismatch` (with a reliable record). `as_of == valid_from` and `as_of == valid_to` are
+both inside the valid range. Missing `valid_from`, `valid_to` or `status` on a reliable record
+-> validity `unknown`.
+
+**Output wording.** Use "potential certification mismatch" and "could not verify". Never the
+words "fraud" or "fake", anywhere in `reasoning` or `seller_request_list`.
+
+**Seller request list.** One sentence per conflicting or unknown-required field, built only from
+values already present on the claim. A field whose claim-side value is missing contributes no
+sentence that names that field's value — never invent a value to ask about.
 
 ## 7. Rate evidence and human approval
 
@@ -294,3 +364,260 @@ Section 6: reserved for the verification step, not yet written.
   warns about them.
 - **Accepted deviations:** `cost_engine.py` lines rewritten for non-duty ranges; a lone range bound is rejected;
   a leading `www.` is not a separate domain; the builder's `UnchangedResult`; extra `CheckResult` fields.
+
+## 8. Rules, classification and risk (proposed, to confirm)
+
+Code: `app/decision/rules/rule_engine.py`, `app/decision/classifier.py`, `app/decision/risk_engine.py`.
+Data: `app/decision/rules/<category>_rules.yaml`, `app/decision/classifier_config.yaml`,
+`app/decision/risk_weights.yaml`.
+
+**All rule content requires human verification against official sources before the demo.** The rules file and
+every rule carry that `content_status`, and each check's reasoning repeats it. Source links are portal home
+pages only.
+
+### Rule format
+
+- One file per category, `<category>_rules.yaml`, with `category`, `rules_version`, `content_status` and `rules`.
+  The category name must match `^[a-z][a-z0-9_]*$`, so it cannot point outside the rules folder. A category with
+  no file has no rules (empty list).
+- Each rule: `id`, `category`, `area`, `condition`, `result_if_true`, `requires_evidence`, `source_urls`,
+  `version`, `effective_date`, `last_reviewed`, `mandatory` (default true), `prohibition` (default false),
+  `content_status`. Unknown keys, duplicate ids, or a rule category that differs from the file are rejected.
+  One bad rule rejects the whole file.
+- `result_if_true` may only be `potentially_applicable`, `unverified` or `not_applicable`. A rule alone can never
+  claim `verified` or `contradiction_detected`; those need evidence.
+- All five Bluetooth speaker rules (import_policy, bis, wireless, battery, labelling) are **mandatory**.
+
+### Condition format
+
+- A condition is a structured dict, **never an expression string** (the PRD's `"category == '...'"` form is
+  rejected).
+- Leaf: exactly `{field, op, value}`. `field` is a lowercase name, optionally dotted for nested dicts
+  (`a.b`). `op` is one of `eq`, `ne`, `in`, `not_in`, `gte`, `lte`, `contains`.
+- Combinators, one key each: `{all: [...]}`, `{any: [...]}` (non-empty lists), `{not: {...}}`.
+- Values are str, bool or int (lists of these for `in`/`not_in`; int only for `gte`/`lte`). Floats are rejected.
+- Limits checked at load: depth at most 8, at most 64 nodes.
+
+### Safe evaluator
+
+- A hand-written recursive matcher walks the dict. No `eval`, `exec`, `compile` or attribute access; field
+  lookup only reads dict keys.
+- Three-valued: each node is true, false or unknown.
+  - A leaf is unknown when the field is missing or `None`, or its type does not match the value (a bool never
+    equals an int; a string never equals a number).
+  - `all`: false if any child is false, else unknown if any child is unknown, else true. `any` mirrors it.
+    `not` keeps unknown as unknown.
+- Status from the condition:
+  - false -> `not_applicable`.
+  - unknown -> `unverified`, naming the missing facts. **A missing fact never yields `not_applicable`.**
+  - true -> evidence decides: any required evidence `contradiction_detected` -> `contradiction_detected`; all
+    required evidence `verified` -> `verified`; otherwise `result_if_true`. Evidence that is present but
+    `unverified` does not change the status (it is named in the reasoning).
+- Evidence is a mapping of evidence type (for example `registration_record`) to `{evidence_id, status}`, where
+  status is `verified`, `unverified` or `contradiction_detected`. The evidence producer (for example the
+  verification engine) is responsible for reliability.
+- `prohibition_applies` is true only when a `prohibition: true` rule's condition is true.
+- Each `RequirementCheck` carries `rule_id`, `rule_version`, `area`, `status`, `reasoning`, `evidence_ids`,
+  `mandatory`, `prohibition_applies` and `requires_evidence`.
+
+### Classification
+
+- Keyword and attribute matching only, on lowercased, accent-folded, punctuation-stripped text; whole words or
+  phrases only.
+- A category is considered only if one of its anchor keywords appears. No anchor for any category ->
+  `unsupported`.
+- Score = sum of matched signal weights (Decimal, capped at 1). Score at or above `confidence_threshold` (0.6) ->
+  `confirmed` (confidence high at or above `high_confidence_threshold`, else medium); below -> `needs_confirmation`,
+  confidence low. A tie between categories -> `needs_confirmation`.
+- HS codes are suggestions marked "suggested, not verified", never a classification.
+
+### Risk engine interpretations
+
+- Only mandatory checks are scored and count for precedence rules 3 and 4.
+- The identity result is scored with the same weights as a check (`verified` 0, `unverified` 2,
+  `contradiction_detected` 3) and counts as a mandatory check. A missing identity result counts as `unverified`.
+- Precedence rule 2 (`insufficient_information`) also fires when quantity or purpose is `None` (treated as a
+  skipped key fact) or when no mandatory check was evaluated. Its risk level follows the score, with a
+  contradiction still forcing high.
+- A prohibition takes precedence over everything, including missing classification.
+- `likely_importable` is always risk `low` (section 2 rule 5), even when bonuses make the score above 1; the score
+  is still reported.
+- The cost estimate never changes the score; it only adds a next action when its rates are unverified or stale.
+- `RiskResult` also carries `evidence_ids` and `rule_versions` (`rule_id@version`).
+
+### Note on the worked demo
+
+The section 3 score of 7 is a **risk-engine input example** (BIS and wireless checks only), not a full five-rule
+run. Running all five mandatory Bluetooth speaker rules on the demo product gives five `potentially_applicable`
+checks, so the score is 10 (still `conditional_import`, high).
+
+### Approved interpretations
+
+- Missing identity result: counts as `unverified`, adds 2 to the score. Approved.
+- No mandatory checks evaluated: outcome is `insufficient_information`, not `likely_importable`. Approved.
+- `likely_importable` is always low risk, even when bonuses push the score above 1. Approved.
+- All three are confirmed by tests: `test_missing_identity_result_counts_as_unverified`,
+  `test_no_mandatory_checks_is_insufficient_information`, `test_likely_importable_is_low_even_with_bonuses`.
+- Still to confirm before demo: rule content and source URLs.
+
+## 9. Report schema (frontend contract)
+
+Code: `app/decision/report_schema.py` (models), `app/decision/report_builder.py` (`assemble_report`).
+
+**The report models are the contract with the frontend.** Changing a field name, type or meaning is a contract
+change and needs a matching frontend change.
+
+### Shape
+
+- Follows PRD B5 with these differences:
+  - JSON keys are camelCase (`riskLevel`, `evidenceIds`, `sellerClaims`); Python fields are snake_case.
+    Serialise with `FullReport.to_frontend()` (or `model_dump(by_alias=True)`). No snake_case key appears in
+    the JSON.
+  - Enum values stay lowercase (section 1), for example `conditional_import`, not `CONDITIONAL_IMPORT`.
+  - Money and rates are Decimal and serialise as strings (`"1542.88"`), never floats.
+  - Extra fields beyond B5: `score`, `reasons`, `nextActions` (numbered, 1 = most urgent; `nextAction` is the
+    first one's text), `ruleVersions` (`rule_id@version`), `questionsSkipped`. The summary classification also
+    carries `confidence` and `candidateHsCodes` (suggestions only).
+- Every model rejects unknown fields. Only existing enums are used; evidence `sourceType` is one of `listing`,
+  `official_portal`, `user_upload`, `rule_source`.
+- `disclaimer` is always exactly "Decision support only. Not legal clearance or customs approval." Any other
+  value is rejected.
+- No `generated_at`: the builder never reads the clock. The caller adds a timestamp when it stores the report.
+
+### Validation
+
+- **Evidence integrity:** every evidence ID referenced by a profile fact, a check or the certification
+  comparison must appear in `evidence`. A dangling ID or a duplicate evidence ID is a hard validation error.
+- Profile facts sit in the list matching their `kind` (`confirmed`, `seller_claim`, `user_supplied`). Confirmed
+  facts need an `evidence_id`. Fact values are str, int, bool or Decimal; floats are rejected.
+- Evidence `retrievedAt` must be timezone-aware.
+
+### Assembly
+
+- `assemble_report(investigation_id, classification, checks, identity_result, cost_estimate, profile, evidence,
+  questions_skipped)` calls `compute_risk` with the default risk config.
+- **Quantity and purpose are read from the profile's `user_supplied` facts** (`quantity` as int, `purpose` as
+  str). A wrong type is an error. A missing fact, or a field listed in `questions_skipped`, is passed to
+  `compute_risk` as `None`, so the outcome is `insufficient_information` (section 8). A skipped `category` drops
+  the classification.
+- `identity_result` is the verification engine's `VerificationResult` (or `None`); its overall result is scored and
+  the full result becomes `certificationComparison`. `None` gives a null comparison and is scored as unverified.
+- `summary.bis` and `summary.wireless` are the status of the first check in that area, or null.
+- `summary.sellerClaimsBis` is true when a seller-claim fact `bis_registration_no` or `certification_claims` has
+  a non-empty value (or `true`).
+- `summary.illustrativeCostPerUnit` is the expected per-unit cost; `cost` is null when no estimate was made.
+
+### Demo
+
+The 100-speaker demo (five rules, identity unverified, resale, quantity 100, needs_confirmation, golden cost
+inputs) gives `conditional_import`, high, score 10, expected cost per unit 1542.88 INR.
+
+## 10. Storage (proposed, to confirm)
+
+Code: `app/db/` (`database.py`, `migrations.py`, `repositories.py`, `session.py`, `ids.py`). **The schema is in
+`app/db/migrations.py`.**
+
+### Decisions
+
+- **Supabase Postgres replaces SQLite.** SQLite was the MVP plan; Supabase is used for persistence across
+  deploys. The code talks to it with `asyncpg` directly (no Supabase client), through `DATABASE_URL`.
+- **Pool:** minimum 1, maximum 5 connections. The Supabase project is on Nano compute with 15 connections in
+  total, so this leaves headroom for migrations, local development and Supabase's own internal connections.
+  `statement_cache_size=0`, so it also works behind Supabase's
+  transaction pooler. SSL comes from the connection string (`sslmode=require`).
+- **Credentials never reach logs.** The connection string is never logged or put in an error message; logs and
+  errors name only the host. A failed connection raises an error that drops the original exception.
+- **All IDs are ULIDs** (investigations, sessions, facts, evidence, questions, snapshots), stored as TEXT. The
+  repositories reject any other ID before running a query. Demo fixture IDs such as `ev_listing_1` are test-only.
+- **Money is TEXT** holding a Decimal string (`"1542.88"`). Floats are rejected, and the JSONB codec rejects a
+  float anywhere in a JSON value and reads fractional numbers back as Decimal.
+- **Timestamps come from the caller** (`created_at`, `expires_at`, `deleted_at`, ...) and must be
+  timezone-aware. There is no hardcoded retention period.
+- **Soft delete for investigations:** `soft_delete` sets `deleted_at`. A soft-deleted investigation, and every
+  fact, evidence item, question, report and cost estimate under it, is never returned by any reader.
+- **Hard delete removes all evidence:** `hard_delete` deletes the investigation row, and every child table
+  (`order_inputs`, `facts`, `evidence`, `questions`, `reports`, `cost_estimates`, `raw_snapshots`) cascades. It
+  works on soft-deleted rows too.
+
+### Schema (differences from PRD B4)
+
+- Tables as listed in `migrations.py`. `requirement_checks`, `certification_comparisons` and `rule_sets` are not
+  separate tables.
+- `reports.report_json` (nullable JSONB) holds the full `FullReport.to_frontend()` snapshot (section 9);
+  `outcome`, `risk_level`, `score`, `next_actions` and `rule_set_versions` are kept as columns too.
+- `order_inputs.investigation_id` is the primary key (one row per investigation).
+- Row Level Security is enabled on every table with no policies, so Supabase's REST API (anon key) cannot read
+  them. The direct Postgres role this app uses bypasses RLS.
+- Indexes: `investigations.session_id` (live rows only) and `investigation_id` on `facts`, `evidence`,
+  `questions` and `raw_snapshots`.
+- Columns are nullable as in the specification; required values are checked in the repository layer.
+- Question `status` is `open`, `answered` or `skipped` (proposed).
+- Fact values are stored as text (a bool becomes `true` or `false`), so the original type is not preserved.
+
+### Sessions
+
+- The session ID is a ULID in a cookie `importsafe_session`, signed as `<ULID>.<hex HMAC-SHA256>` with
+  `SECRET_KEY` (at least 32 characters, no default). A missing, malformed or tampered cookie is replaced with a
+  new ULID. Cookie attributes: HttpOnly, SameSite=Lax, Secure, path `/`.
+- `get_investigation` can take a `session_id` so a session only sees its own investigations.
+
+### Not done here
+
+- Wiring the pool into the FastAPI startup and shutdown, and setting the cookie in a route (`main.py` and the
+  routes are out of scope for this step).
+- Database tests need `DATABASE_URL`; they run in a throwaway schema `test_<16 hex>` that is dropped afterwards,
+  and skip when it is not set.
+
+## 11. TinyFish connector (proposed, to confirm)
+
+Code: `app/services/tinyfish/` (`connector.py`, `models.py`, `goals.py`, `live_adapter.py`, `fixture_adapter.py`,
+`evidence_capture.py`). `client.py` is the legacy blocking client, kept for the P1/P2 route only.
+
+### Decisions
+
+- **Interface.** `TinyFishConnector` (a `Protocol`) has two async methods: `extract_listing(url)` (Task A) and
+  `fetch_registry_record(registration_no, manufacturer, model)` (Task B). Results are `ExtractionResult` and
+  `RegistryResult` (adds `record_found`). Both carry `is_fixture`.
+- **Never raises.** A missing key, HTTP error, bad response, timeout or a run that is not COMPLETED gives a result
+  with `failed=True` and a status (`TIMEOUT`, `NOT_CONFIGURED`, `ERROR`, `HTTP_<code>`, `FAILED`, `CANCELLED`,
+  `PAGE_UNAVAILABLE`). A FAILED run keeps whatever fields it returned (partial result).
+- **Live flow.** `POST /v1/automation/run-async` (body `{url, goal}`, header `X-API-Key`), then `GET /v1/runs/{run_id}`
+  every 3 seconds until COMPLETED, FAILED or CANCELLED, or 90 seconds in total.
+- **Untrusted text.** Page text and every extracted value are stripped of control, zero-width and bidi characters and
+  capped (excerpts 2,000 characters, values 2,000, raw text 20,000). `raw_text` is wrapped in
+  `<<<UNTRUSTED_PAGE_TEXT_START>>>` / `<<<UNTRUSTED_PAGE_TEXT_END>>>`, and any copy of those markers inside the text
+  is removed. Only whitelisted keys (`LISTING_KEYS`, `REGISTRY_KEYS`) are kept; extra keys are dropped; values are
+  reduced to str, int, bool, list or dict; floats become text. Search terms put into the Task B goal are filtered.
+  Logs carry only run ID, status and field counts, never page content or values.
+- **Missing values.** The goals ask for `N/A` rather than a guess. `N/A`, null and empty values are left out of
+  `fields`. A listing with no extracted fields counts as failed; a registry lookup with no record is not a failure
+  (`record_found=False`).
+- **Excerpts.** The agent returns `{"value", "excerpt"}` per key. `evidence_capture` makes one `EvidenceItem` per
+  field with a non-empty excerpt (`listing` for Task A, `official_portal` for Task B), with a ULID ID. Fields with no
+  excerpt stay low confidence (B6) and produce no evidence. `build_evidence_pairs` returns `(field, EvidenceItem)` so
+  callers can link facts to evidence.
+- **Fixtures.** `FixtureTinyFishConnector` answers the `demo.py` listing URL (headphones, values from
+  `DEMO_RAW_RESULT`), the BT-100 speaker URL (values from `tests/fixtures/demo_report_inputs.py`) and registration
+  number R-41234567 (matched after normalisation). Results have `is_fixture=True` and every excerpt starts with
+  `[FIXTURE DATA]`. Anything else falls back to the live connector. The BT-100 price and currency come from the
+  golden cost inputs and have no excerpt.
+- **Registry portal.** Task B needs a page to search. The default is `https://www.crsbis.in/BIS/` (settable on the
+  connector). **Unverified.** The fixture record uses `registry.example`.
+
+### Endpoint check (docs.tinyfish.ai)
+
+- Confirmed: `POST /v1/automation/run-async` starts a run and returns `run_id`; `GET /v1/runs/{id}` returns the run
+  object with `status` (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), `result`, `error` and `num_of_steps`
+  (null while in progress); auth is `X-API-Key`; `POST /v1/runs/{id}/cancel` exists.
+- Not confirmed: the exact JSON the agent returns for our goals (the shape in `goals.py` is our request, and the
+  parser tolerates a bare value without an excerpt); the registry portal URL; real-site behaviour (no live call has
+  been made in this step).
+- No change from the spec was needed.
+
+### Open items
+
+- **Cancel on timeout.** The connector does not cancel a timed-out run; it expires on TinyFish's side. Cancelling
+  (`POST /v1/runs/{id}/cancel`) would save TinyFish credits.
+- Confirm the registry portal URL and run a live check of both tasks.
+- The investigation coordinator should turn a failed result into a `NEEDS_INPUT` stage and a follow-up question.
+- A fixture result must never be presented as real evidence; the coordinator should surface `is_fixture`.
