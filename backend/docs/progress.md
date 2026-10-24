@@ -298,3 +298,62 @@ dangling evidence ID is a hard validation error; the extra models and extra `Ful
 **Full suite:** 657 passed, 0 failed (618 before this step).
 
 Nothing outside the files listed above was modified in this step.
+
+## Step 6: Supabase storage
+
+**Purpose:** persist investigations, facts, evidence, questions, reports, cost estimates and raw snapshots in
+Supabase Postgres through `asyncpg`, with ULID IDs, soft delete, cascading hard delete and a signed session
+cookie. No API routes, no Supabase client. Details: `docs/decisions.md` section 10.
+
+**Files created**
+- `app/db/__init__.py` (empty), `app/db/ids.py` — ULID helpers.
+- `app/db/database.py` — pool (min 1, max 5, sized for Supabase Nano's 15 connections), JSONB codec, host-only logging, graceful shutdown.
+- `app/db/migrations.py` — `create_tables()`, one transaction; the schema.
+- `app/db/repositories.py` — investigation functions, child-table writers and the five readers.
+- `app/db/session.py` — signed session cookie.
+- `tests/test_db.py` — 97 tests: 84 always run, 13 need `DATABASE_URL`.
+
+**Files changed (append only)**
+- `docs/decisions.md` — Section 10; `docs/progress.md` — this section.
+- `.env.example` — `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_KEY`, `SECRET_KEY`.
+- `requirements.txt` — `asyncpg>=0.29`, `python-ulid>=2.0`.
+
+**Approved additions:** `reports.report_json`; `order_inputs` primary key; RLS with no policies; indexes; the
+readers `list_facts`, `list_evidence`, `list_questions`, `get_report`, `get_cost_estimate`. Also added at
+request: DATABASE_URL is never logged, only its host.
+
+**Not verified:** the 13 database tests were skipped because `DATABASE_URL` is not set here and there is no local
+Postgres, so the SQL has not yet run against a real database. Run them once with `DATABASE_URL` set.
+
+**Full suite:** 741 passed, 13 skipped, 0 failed (657 before this step).
+
+Nothing outside the files listed above was modified in this step.
+
+## Step 7: TinyFish connector
+
+**Purpose:** an async connector for the two TinyFish tasks (listing extraction, official registry lookup) with a
+live adapter, a fixture adapter for the demo, and evidence capture. No API routes, no live network call made in this
+step. Details: `docs/decisions.md` section 11.
+
+**Files created** (`app/services/tinyfish/`)
+- `connector.py` — `TinyFishConnector` Protocol (`extract_listing`, `fetch_registry_record`).
+- `models.py` — `ExtractionResult`, `RegistryResult`, plus text cleaning, delimiting and field extraction.
+- `goals.py` — Task A and Task B goal strings; N/A instead of a guess.
+- `live_adapter.py` — `LiveTinyFishConnector`: run-async, poll every 3 seconds, 90 second timeout, never raises.
+- `fixture_adapter.py` — `FixtureTinyFishConnector`: demo listing URLs and registration number, else live.
+- `evidence_capture.py` — `build_evidence_pairs` and `build_evidence_items`.
+- `tests/test_tinyfish_connector.py` — 21 tests.
+
+**Files changed (append only)**
+- `app/services/tinyfish/client.py` — comment: legacy blocking client for the P1/P2 route only.
+- `docs/decisions.md` — Section 11; `docs/progress.md` — this section.
+
+**Approved additions:** `is_fixture` on both result models and a `[FIXTURE DATA]` excerpt prefix; the
+`(field, EvidenceItem)` helper; the BT-100 speaker as a second fixture URL; no cancel on timeout (open item).
+
+**Not verified:** no real TinyFish call was made. The endpoints and run fields match docs.tinyfish.ai, but the
+shape the agent returns for our goals and the registry portal URL (`https://www.crsbis.in/BIS/`) are unconfirmed.
+
+**Full suite:** 775 passed, 0 failed (754 before this step).
+
+Nothing outside the files listed above was modified in this step.

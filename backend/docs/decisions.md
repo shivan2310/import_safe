@@ -511,3 +511,113 @@ change and needs a matching frontend change.
 
 The 100-speaker demo (five rules, identity unverified, resale, quantity 100, needs_confirmation, golden cost
 inputs) gives `conditional_import`, high, score 10, expected cost per unit 1542.88 INR.
+
+## 10. Storage (proposed, to confirm)
+
+Code: `app/db/` (`database.py`, `migrations.py`, `repositories.py`, `session.py`, `ids.py`). **The schema is in
+`app/db/migrations.py`.**
+
+### Decisions
+
+- **Supabase Postgres replaces SQLite.** SQLite was the MVP plan; Supabase is used for persistence across
+  deploys. The code talks to it with `asyncpg` directly (no Supabase client), through `DATABASE_URL`.
+- **Pool:** minimum 1, maximum 5 connections. The Supabase project is on Nano compute with 15 connections in
+  total, so this leaves headroom for migrations, local development and Supabase's own internal connections.
+  `statement_cache_size=0`, so it also works behind Supabase's
+  transaction pooler. SSL comes from the connection string (`sslmode=require`).
+- **Credentials never reach logs.** The connection string is never logged or put in an error message; logs and
+  errors name only the host. A failed connection raises an error that drops the original exception.
+- **All IDs are ULIDs** (investigations, sessions, facts, evidence, questions, snapshots), stored as TEXT. The
+  repositories reject any other ID before running a query. Demo fixture IDs such as `ev_listing_1` are test-only.
+- **Money is TEXT** holding a Decimal string (`"1542.88"`). Floats are rejected, and the JSONB codec rejects a
+  float anywhere in a JSON value and reads fractional numbers back as Decimal.
+- **Timestamps come from the caller** (`created_at`, `expires_at`, `deleted_at`, ...) and must be
+  timezone-aware. There is no hardcoded retention period.
+- **Soft delete for investigations:** `soft_delete` sets `deleted_at`. A soft-deleted investigation, and every
+  fact, evidence item, question, report and cost estimate under it, is never returned by any reader.
+- **Hard delete removes all evidence:** `hard_delete` deletes the investigation row, and every child table
+  (`order_inputs`, `facts`, `evidence`, `questions`, `reports`, `cost_estimates`, `raw_snapshots`) cascades. It
+  works on soft-deleted rows too.
+
+### Schema (differences from PRD B4)
+
+- Tables as listed in `migrations.py`. `requirement_checks`, `certification_comparisons` and `rule_sets` are not
+  separate tables.
+- `reports.report_json` (nullable JSONB) holds the full `FullReport.to_frontend()` snapshot (section 9);
+  `outcome`, `risk_level`, `score`, `next_actions` and `rule_set_versions` are kept as columns too.
+- `order_inputs.investigation_id` is the primary key (one row per investigation).
+- Row Level Security is enabled on every table with no policies, so Supabase's REST API (anon key) cannot read
+  them. The direct Postgres role this app uses bypasses RLS.
+- Indexes: `investigations.session_id` (live rows only) and `investigation_id` on `facts`, `evidence`,
+  `questions` and `raw_snapshots`.
+- Columns are nullable as in the specification; required values are checked in the repository layer.
+- Question `status` is `open`, `answered` or `skipped` (proposed).
+- Fact values are stored as text (a bool becomes `true` or `false`), so the original type is not preserved.
+
+### Sessions
+
+- The session ID is a ULID in a cookie `importsafe_session`, signed as `<ULID>.<hex HMAC-SHA256>` with
+  `SECRET_KEY` (at least 32 characters, no default). A missing, malformed or tampered cookie is replaced with a
+  new ULID. Cookie attributes: HttpOnly, SameSite=Lax, Secure, path `/`.
+- `get_investigation` can take a `session_id` so a session only sees its own investigations.
+
+### Not done here
+
+- Wiring the pool into the FastAPI startup and shutdown, and setting the cookie in a route (`main.py` and the
+  routes are out of scope for this step).
+- Database tests need `DATABASE_URL`; they run in a throwaway schema `test_<16 hex>` that is dropped afterwards,
+  and skip when it is not set.
+
+## 11. TinyFish connector (proposed, to confirm)
+
+Code: `app/services/tinyfish/` (`connector.py`, `models.py`, `goals.py`, `live_adapter.py`, `fixture_adapter.py`,
+`evidence_capture.py`). `client.py` is the legacy blocking client, kept for the P1/P2 route only.
+
+### Decisions
+
+- **Interface.** `TinyFishConnector` (a `Protocol`) has two async methods: `extract_listing(url)` (Task A) and
+  `fetch_registry_record(registration_no, manufacturer, model)` (Task B). Results are `ExtractionResult` and
+  `RegistryResult` (adds `record_found`). Both carry `is_fixture`.
+- **Never raises.** A missing key, HTTP error, bad response, timeout or a run that is not COMPLETED gives a result
+  with `failed=True` and a status (`TIMEOUT`, `NOT_CONFIGURED`, `ERROR`, `HTTP_<code>`, `FAILED`, `CANCELLED`,
+  `PAGE_UNAVAILABLE`). A FAILED run keeps whatever fields it returned (partial result).
+- **Live flow.** `POST /v1/automation/run-async` (body `{url, goal}`, header `X-API-Key`), then `GET /v1/runs/{run_id}`
+  every 3 seconds until COMPLETED, FAILED or CANCELLED, or 90 seconds in total.
+- **Untrusted text.** Page text and every extracted value are stripped of control, zero-width and bidi characters and
+  capped (excerpts 2,000 characters, values 2,000, raw text 20,000). `raw_text` is wrapped in
+  `<<<UNTRUSTED_PAGE_TEXT_START>>>` / `<<<UNTRUSTED_PAGE_TEXT_END>>>`, and any copy of those markers inside the text
+  is removed. Only whitelisted keys (`LISTING_KEYS`, `REGISTRY_KEYS`) are kept; extra keys are dropped; values are
+  reduced to str, int, bool, list or dict; floats become text. Search terms put into the Task B goal are filtered.
+  Logs carry only run ID, status and field counts, never page content or values.
+- **Missing values.** The goals ask for `N/A` rather than a guess. `N/A`, null and empty values are left out of
+  `fields`. A listing with no extracted fields counts as failed; a registry lookup with no record is not a failure
+  (`record_found=False`).
+- **Excerpts.** The agent returns `{"value", "excerpt"}` per key. `evidence_capture` makes one `EvidenceItem` per
+  field with a non-empty excerpt (`listing` for Task A, `official_portal` for Task B), with a ULID ID. Fields with no
+  excerpt stay low confidence (B6) and produce no evidence. `build_evidence_pairs` returns `(field, EvidenceItem)` so
+  callers can link facts to evidence.
+- **Fixtures.** `FixtureTinyFishConnector` answers the `demo.py` listing URL (headphones, values from
+  `DEMO_RAW_RESULT`), the BT-100 speaker URL (values from `tests/fixtures/demo_report_inputs.py`) and registration
+  number R-41234567 (matched after normalisation). Results have `is_fixture=True` and every excerpt starts with
+  `[FIXTURE DATA]`. Anything else falls back to the live connector. The BT-100 price and currency come from the
+  golden cost inputs and have no excerpt.
+- **Registry portal.** Task B needs a page to search. The default is `https://www.crsbis.in/BIS/` (settable on the
+  connector). **Unverified.** The fixture record uses `registry.example`.
+
+### Endpoint check (docs.tinyfish.ai)
+
+- Confirmed: `POST /v1/automation/run-async` starts a run and returns `run_id`; `GET /v1/runs/{id}` returns the run
+  object with `status` (PENDING, RUNNING, COMPLETED, FAILED, CANCELLED), `result`, `error` and `num_of_steps`
+  (null while in progress); auth is `X-API-Key`; `POST /v1/runs/{id}/cancel` exists.
+- Not confirmed: the exact JSON the agent returns for our goals (the shape in `goals.py` is our request, and the
+  parser tolerates a bare value without an excerpt); the registry portal URL; real-site behaviour (no live call has
+  been made in this step).
+- No change from the spec was needed.
+
+### Open items
+
+- **Cancel on timeout.** The connector does not cancel a timed-out run; it expires on TinyFish's side. Cancelling
+  (`POST /v1/runs/{id}/cancel`) would save TinyFish credits.
+- Confirm the registry portal URL and run a live check of both tasks.
+- The investigation coordinator should turn a failed result into a `NEEDS_INPUT` stage and a follow-up question.
+- A fixture result must never be presented as real evidence; the coordinator should surface `is_fixture`.
