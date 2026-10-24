@@ -1,0 +1,122 @@
+# Cost assumptions. EVERY VALUE HERE IS A PLACEHOLDER. Nothing in this file is an official rate.
+# Each entry: value, source, as_of, verified, owner. verified means "checked against an official
+# source"; all are false and owners are TBD until someone verifies them. See docs/decisions.md section 5.
+# Percent fields use plain percent numbers (20 means 20%). Numbers are converted to Decimal by the
+# loader (Decimal(str(value))), never kept as floats.
+
+fx_usd_inr:
+  value: 90
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+landing_charge_pct:
+  value: 1
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+bcd_pct:
+  value: 20
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+sws_pct_of_bcd:
+  value: 10
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+igst_pct:
+  value: 18
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+insurance_pct_of_goods:
+  value: 0
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+clearing_inr:
+  value: 3000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+port_cfs_inr:
+  value: 2000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+domestic_transport_inr:
+  value: 2000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+certification_inr:
+  value: 0
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+# Additional duties on their own bases (base: cif | assessable_value | bcd). Empty by default.
+other_duties: []
+
+# Range settings (placeholders). bcd_low_pct / bcd_high_pct are absolute percentages.
+fx_variation_pct:
+  value: 5
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+freight_variation_pct:
+  value: 20
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+bcd_low_pct:
+  value: 10
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+bcd_high_pct:
+  value: 30
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+# Used only when freight is not supplied.
+default_freight_low_inr:
+  value: 5000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+
+default_freight_high_inr:
+  value: 20000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
