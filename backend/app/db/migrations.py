@@ -19,6 +19,7 @@ TABLES = (
     "reports",
     "cost_estimates",
     "raw_snapshots",
+    "progress_events",
 )
 
 SCHEMA_SQL = """
@@ -110,11 +111,21 @@ CREATE TABLE IF NOT EXISTS raw_snapshots (
     retrieved_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS progress_events (
+    id TEXT PRIMARY KEY,
+    investigation_id TEXT REFERENCES investigations(id) ON DELETE CASCADE,
+    stage TEXT,
+    state TEXT,
+    message TEXT,
+    at TIMESTAMPTZ
+);
+
 CREATE INDEX IF NOT EXISTS idx_investigations_session_id ON investigations (session_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_facts_investigation_id ON facts (investigation_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_investigation_id ON evidence (investigation_id);
 CREATE INDEX IF NOT EXISTS idx_questions_investigation_id ON questions (investigation_id);
 CREATE INDEX IF NOT EXISTS idx_raw_snapshots_investigation_id ON raw_snapshots (investigation_id);
+CREATE INDEX IF NOT EXISTS idx_progress_events_investigation_id ON progress_events (investigation_id);
 
 ALTER TABLE investigations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_inputs ENABLE ROW LEVEL SECURITY;
@@ -124,6 +135,7 @@ ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cost_estimates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raw_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE progress_events ENABLE ROW LEVEL SECURITY;
 """
 
 
