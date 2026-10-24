@@ -30,3 +30,4 @@ dd { margin: 6px 0 0; font-weight: 600; }
 .error { color: #a12424; }
 footer { margin-top: 32px; text-align: center; }
 @media (max-width: 550px) { .input-row { flex-direction: column; } .intro { margin-top: 48px; } form, .result { padding: 18px; } }
+.site-logo { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; vertical-align: middle; }
