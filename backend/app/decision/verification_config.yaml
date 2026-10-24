@@ -1,0 +1,37 @@
+# Verification engine configuration. See docs/decisions.md section 6.
+# Validated by app/decision/verification_config.py; no hardcoded values elsewhere.
+
+fuzzy_threshold: 0.85
+
+legal_suffixes:
+  - co
+  - ltd
+  - limited
+  - llc
+  - inc
+  - corp
+  - corporation
+  - pvt
+  - private
+  - gmbh
+  - sa
+  - plc
+  - company
+
+inactive_statuses:
+  - cancelled
+  - suspended
+  - expired
+  - withdrawn
+  - revoked
+
+required_fields:
+  - registration_no
+  - manufacturer
+  - model_scope
+  - validity
+
+optional_fields:
+  - factory_location
+  - category
+  - brand

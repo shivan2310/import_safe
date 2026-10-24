@@ -169,3 +169,191 @@ Nothing outside the files listed above was modified in this step.
 **Full suite:** 357 passed, 0 failed (343 before). The golden case is unchanged: INR 154,287.59 total, INR 1,542.88 per unit.
 
 Nothing outside the files listed above was modified in this follow-up.
+
+## Step 3a: verification config and text normalisers
+
+**Purpose:** lay the groundwork for the verification engine (PRD B8): a validated config
+for its thresholds/field lists, and the three pure text normalisers (registration number,
+name, model) plus wildcard model-scope matching. No field comparison, overall result,
+follow-up questions or API code exists yet.
+
+**Files changed**
+- `docs/decisions.md` — replaced the Section 6 placeholder with "Verification — Part 1:
+  normalisation rules (proposed, to confirm)".
+
+**Files created**
+- `app/decision/verification_config.yaml` — fuzzy threshold, legal suffixes, inactive
+  statuses, required/optional comparison fields.
+- `app/decision/verification_config.py` — Pydantic v2 `VerificationConfig` model and
+  loader; rejects a threshold outside (0, 1), unknown field names, overlap between
+  required and optional fields, and non-lowercase suffixes/statuses.
+- `app/decision/verification_normalizers.py` — `normalize_registration`, `normalize_name`,
+  `normalize_model`, `model_matches_scope`. Pure, stdlib-only (`re`, `unicodedata`,
+  `fnmatch`); no eval/exec.
+- `tests/test_verification_normalizers.py` — 59 tests, 59 passed.
+
+**Full suite:** 416 passed, 0 failed (357 before this step).
+
+Nothing outside the files listed above was modified in this step.
+
+## Step 3: verification engine (field comparison, overall result, seller request list)
+
+**Purpose:** compare a seller's certification claim against an official registry record
+(PRD B8) and produce an overall identity result, per-field comparisons, conflicts, and a
+seller request list built only from the claim's own values. No API code, no DB, no
+TinyFish calls, no rule or risk code.
+
+**Files changed**
+- `docs/decisions.md` — added "Part 2: comparison and overall result" under the existing
+  Section 6 (Part 1, normalisation, is unchanged; no second Section 6 heading was added).
+- `docs/progress.md` — appended this section.
+
+**Files created**
+- `app/decision/verification_engine.py` — `CertClaim`, `CertRecord`, `FieldComparison`,
+  `VerificationResult` dataclasses and the pure `verify_certification(claim, record, as_of,
+  config)`. Reliable-record gate (unreliable or missing record -> every field `unknown`,
+  never `mismatch`); exact match on registration number; `difflib` fuzzy match on name
+  fields; wildcard model-scope match; validity vs. caller-supplied `as_of`; overall result
+  by the Section 6 precedence; seller request list from claim values only. Imports only
+  `date` from `datetime` (never `datetime.datetime`), `difflib`, and the Step 3a
+  config/normaliser/enum modules — no eval/exec.
+- `tests/fixtures/__init__.py`, `tests/fixtures/verification_cases.py` — 17 named fixture
+  cases (full match, legal suffix difference, manufacturer partial, manufacturer mismatch,
+  wrong model, model wildcard match, model wildcard miss, expired record, not yet valid,
+  cancelled status, record None, unreliable record (no excerpt), unreliable record (wrong
+  source_type), claim missing registration_no, registration case/hyphen difference,
+  optional field mismatch only, same inputs same output).
+- `tests/test_verification_engine.py` — 55 tests, 55 passed.
+
+**Files reused unchanged (confirmed via `git status`, still untracked/uncommitted from
+Step 3a, not edited this step):** `app/decision/verification_config.yaml`,
+`app/decision/verification_config.py`, `app/decision/verification_normalizers.py`.
+
+**Full suite:** 471 passed, 0 failed (416 before this step).
+
+Nothing outside the files listed above was modified in this step.
+
+## Step 4: rule engine, classification and risk engine
+
+**Purpose:** versioned requirement rules with a safe structural evaluator (PRD B7), keyword/attribute
+classification, and the risk engine (PRD B10) using the decisions.md section 2 precedence and the
+`risk_weights.yaml` weights. No API code, no DB, no TinyFish calls. Details: `docs/decisions.md` section 8.
+
+**Files created**
+- `app/decision/rules/__init__.py` — empty.
+- `app/decision/rules/bluetooth_speaker_rules.yaml` — five mandatory rules (import_policy, bis, wireless,
+  battery, labelling), all marked "requires human verification against official sources before demo".
+- `app/decision/rules/rule_engine.py` — `load_rules(category, path)`, `evaluate_rules(product_profile, rules,
+  evidence)`, `Rule`, `EvidenceRef`, `RequirementCheck`, `RuleValidationError`. Three-valued structural
+  matcher; no eval/exec.
+- `app/decision/classifier_config.yaml` — bluetooth_speaker anchors, weighted signals, threshold 0.6, HS
+  suggestions marked "suggested, not verified".
+- `app/decision/classifier.py` — `classify(extracted, config)`, `load_classifier_config()`, `Classification`.
+- `app/decision/risk_engine.py` — `compute_risk(checks, identity_result, classification, quantity, purpose,
+  cost_estimate)` -> `RiskResult`.
+- `tests/test_rule_engine.py` (82), `tests/test_classifier.py` (29), `tests/test_risk_engine.py` (36).
+
+**Files changed (append only)**
+- `docs/decisions.md` — added Section 8.
+- `docs/progress.md` — appended this section.
+
+**Approved extensions:** extra fields on `RequirementCheck` (`mandatory`, `prohibition_applies`,
+`requires_evidence`), `Classification` (`score`, `config_version`) and `RiskResult` (`evidence_ids`,
+`rule_versions`); optional rule fields `mandatory`, `prohibition`, `content_status`. No new enum values were
+needed, so `app/decision/enums.py` is unchanged.
+
+**Demo:** the section 3 example (BIS and wireless only) scores 7 -> `conditional_import`, high. A full
+five-rule run on the demo product scores 10 (same outcome and level).
+
+**Full suite:** 618 passed, 0 failed (471 before this step).
+
+Nothing outside the files listed above was modified in this step.
+
+## Step 5: report schema and assembly
+
+**Purpose:** the full report object (PRD B5) as Pydantic v2 models, and a pure builder that assembles it from
+the classification, checks, verification result, cost estimate, profile and evidence, calling `compute_risk`.
+The schema is the frontend contract. No API code, no DB, no TinyFish calls. Details: `docs/decisions.md`
+section 9.
+
+**Files created**
+- `app/decision/report_schema.py` — `ProductFact`, `ProductProfile`, `RequirementCheckReport`,
+  `ReportFieldComparison`, `CertificationComparisonReport`, `ReportCostLine`, `ReportAssumption`, `ReportCost`,
+  `NextAction`, `EvidenceItem`, `SummaryClassification`, `SummaryCost`, `ReportSummary`, `FullReport`
+  (camelCase JSON, fixed disclaimer, evidence-ID integrity check).
+- `app/decision/report_builder.py` — `assemble_report(...)`.
+- `tests/fixtures/demo_report_inputs.py` — the 100-speaker demo inputs.
+- `tests/test_report_builder.py` — 39 tests.
+
+**Files changed (append only)**
+- `docs/decisions.md` — added Section 9.
+- `docs/progress.md` — appended this section.
+
+**Approved:** camelCase keys with lowercase enum values; quantity and purpose read from `user_supplied` facts;
+dangling evidence ID is a hard validation error; the extra models and extra `FullReport` fields.
+
+**Demo:** `conditional_import`, high, score 10, disclaimer present, cost per unit 1542.88, no "fraud" or
+"fake" in the JSON.
+
+**Full suite:** 657 passed, 0 failed (618 before this step).
+
+Nothing outside the files listed above was modified in this step.
+
+## Step 6: Supabase storage
+
+**Purpose:** persist investigations, facts, evidence, questions, reports, cost estimates and raw snapshots in
+Supabase Postgres through `asyncpg`, with ULID IDs, soft delete, cascading hard delete and a signed session
+cookie. No API routes, no Supabase client. Details: `docs/decisions.md` section 10.
+
+**Files created**
+- `app/db/__init__.py` (empty), `app/db/ids.py` — ULID helpers.
+- `app/db/database.py` — pool (min 1, max 5, sized for Supabase Nano's 15 connections), JSONB codec, host-only logging, graceful shutdown.
+- `app/db/migrations.py` — `create_tables()`, one transaction; the schema.
+- `app/db/repositories.py` — investigation functions, child-table writers and the five readers.
+- `app/db/session.py` — signed session cookie.
+- `tests/test_db.py` — 97 tests: 84 always run, 13 need `DATABASE_URL`.
+
+**Files changed (append only)**
+- `docs/decisions.md` — Section 10; `docs/progress.md` — this section.
+- `.env.example` — `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_KEY`, `SECRET_KEY`.
+- `requirements.txt` — `asyncpg>=0.29`, `python-ulid>=2.0`.
+
+**Approved additions:** `reports.report_json`; `order_inputs` primary key; RLS with no policies; indexes; the
+readers `list_facts`, `list_evidence`, `list_questions`, `get_report`, `get_cost_estimate`. Also added at
+request: DATABASE_URL is never logged, only its host.
+
+**Not verified:** the 13 database tests were skipped because `DATABASE_URL` is not set here and there is no local
+Postgres, so the SQL has not yet run against a real database. Run them once with `DATABASE_URL` set.
+
+**Full suite:** 741 passed, 13 skipped, 0 failed (657 before this step).
+
+Nothing outside the files listed above was modified in this step.
+
+## Step 7: TinyFish connector
+
+**Purpose:** an async connector for the two TinyFish tasks (listing extraction, official registry lookup) with a
+live adapter, a fixture adapter for the demo, and evidence capture. No API routes, no live network call made in this
+step. Details: `docs/decisions.md` section 11.
+
+**Files created** (`app/services/tinyfish/`)
+- `connector.py` — `TinyFishConnector` Protocol (`extract_listing`, `fetch_registry_record`).
+- `models.py` — `ExtractionResult`, `RegistryResult`, plus text cleaning, delimiting and field extraction.
+- `goals.py` — Task A and Task B goal strings; N/A instead of a guess.
+- `live_adapter.py` — `LiveTinyFishConnector`: run-async, poll every 3 seconds, 90 second timeout, never raises.
+- `fixture_adapter.py` — `FixtureTinyFishConnector`: demo listing URLs and registration number, else live.
+- `evidence_capture.py` — `build_evidence_pairs` and `build_evidence_items`.
+- `tests/test_tinyfish_connector.py` — 21 tests.
+
+**Files changed (append only)**
+- `app/services/tinyfish/client.py` — comment: legacy blocking client for the P1/P2 route only.
+- `docs/decisions.md` — Section 11; `docs/progress.md` — this section.
+
+**Approved additions:** `is_fixture` on both result models and a `[FIXTURE DATA]` excerpt prefix; the
+`(field, EvidenceItem)` helper; the BT-100 speaker as a second fixture URL; no cancel on timeout (open item).
+
+**Not verified:** no real TinyFish call was made. The endpoints and run fields match docs.tinyfish.ai, but the
+shape the agent returns for our goals and the registry portal URL (`https://www.crsbis.in/BIS/`) are unconfirmed.
+
+**Full suite:** 775 passed, 0 failed (754 before this step).
+
+Nothing outside the files listed above was modified in this step.

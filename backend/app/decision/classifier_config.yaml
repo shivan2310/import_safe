@@ -1,0 +1,39 @@
+# Product classification configuration. See docs/decisions.md section 8.
+# Validated by app/decision/classifier.py. Numbers are quoted and read as Decimal.
+#
+# Keyword and attribute matching only. HS codes are suggestions, not verified
+# classifications; the team confirms them against the current customs tariff.
+
+version: "v0-proposed"
+
+# Score at or above this -> confirmed; below -> needs_confirmation.
+confidence_threshold: "0.6"
+# Score at or above this -> confidence high; otherwise a confirmed result is medium.
+high_confidence_threshold: "0.85"
+
+categories:
+  bluetooth_speaker:
+    # At least one anchor keyword must appear, or the product is not this category.
+    anchor_keywords: [speaker, speakers, soundbar, boombox]
+    anchor_fields: [title, description, category]
+    signals:
+      - name: speaker_phrase_in_title
+        keywords: [bluetooth speaker, wireless speaker, portable speaker]
+        fields: [title]
+        weight: "0.5"
+      - name: speaker_keyword
+        keywords: [speaker, speakers, soundbar, boombox]
+        fields: [title, description, category]
+        weight: "0.2"
+      - name: bluetooth_keyword
+        keywords: [bluetooth]
+        fields: [title, description, specifications]
+        weight: "0.2"
+      - name: bluetooth_attribute
+        attribute_present: bluetooth
+        weight: "0.1"
+    hs_suggestions:
+      - code: "8518.21"
+        note: "suggested, not verified: single loudspeaker mounted in its enclosure"
+      - code: "8518.22"
+        note: "suggested, not verified: multiple loudspeakers mounted in the same enclosure"

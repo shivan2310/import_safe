@@ -62,3 +62,6 @@ class TinyFishClient:
             msg = (run.error or {}).get("message") or f"run ended with status {run.status}"
             raise TinyFishFailureError(f"TinyFish run not completed: {msg}")
         return run
+
+# Legacy blocking client (POST /v1/automation/run). Used by the P1/P2 route only. The investigation flow uses the
+# async connector in connector.py / live_adapter.py (run-async + polling) instead.
