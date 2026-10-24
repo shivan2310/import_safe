@@ -13,6 +13,8 @@ PRODUCT_GOAL = (
     "'currency' the displayed currency, 'moq' the minimum order quantity, "
     "'specifications' an object of attribute name to value, "
     "'certification_claims' a list of certifications the seller claims (e.g. CE, FCC, BIS). "
+    "'image' is the absolute URL of the main photo of this exact product, not a logo, "
+    "icon, or recommended product. Resolve relative photo URLs against the listing URL. "
     "Do not log in, solve CAPTCHAs, or bypass any access restriction. If the page is not a "
     'product page or cannot be viewed, return {"status": "failure", "reason": "<why>"}.'
 )
