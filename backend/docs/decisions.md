@@ -179,7 +179,77 @@ Code: `app/decision/cost_config.py` (`max_age_days`, `version`, `effective_date`
 - Automatic FX provider.
 - Making `today` required once the investigation flow supplies it.
 
-Section 6: reserved for the verification step, not yet written.
+## 6. Verification — Part 1: normalisation rules (proposed, to confirm)
+
+Code: `app/decision/verification_config.py`, `app/decision/verification_normalizers.py`. Values:
+`app/decision/verification_config.yaml`.
+
+**Registration number normalisation:**
+
+- Strip case, spaces, hyphens and slashes.
+- Compare the stripped strings exactly. No fuzzy matching.
+- Example: "R-41234567", "r41234567" and "R 41 234 567" all normalise to "R41234567".
+
+**Name normalisation (manufacturer, factory_location, brand, category):**
+
+- Unicode NFKD normalisation, then encode as ASCII ignoring errors.
+- Lowercase.
+- Remove punctuation (keep only letters, digits and spaces).
+- Remove legal suffixes from the configured list (whole-word match only, after splitting into
+  tokens).
+- Collapse whitespace and strip.
+- Sort tokens alphabetically, so word-order differences don't produce a mismatch.
+- Empty string after normalisation is treated as a missing value (unknown).
+
+**Model normalisation and wildcard matching:**
+
+- Same steps as name normalisation, except tokens are NOT sorted (model numbers are
+  order-sensitive).
+- Wildcard characters: `*` (zero or more characters), `?` (exactly one character), `x` or `X` at
+  the end of a token (exactly one digit). Example: "BT-1xx" matches "BT-100" through "BT-199";
+  "BT-1*" matches anything starting "BT-1"; "BT-1?" matches exactly "BT-10" through "BT-19".
+- A scope entry is a wildcard pattern if it contains `*`, `?` or a trailing x/X token; otherwise
+  it is an exact match after normalisation.
+- Matching is case-insensitive on the normalised strings.
+
+Note: wildcard patterns are data, not code. Never use `eval` or `exec`.
+
+### Part 2: comparison and overall result
+
+Code: `app/decision/verification_engine.py`.
+
+**Reliable record.** A record is reliable only when `source_type == "official_portal"` AND
+`excerpt` is non-empty AND `evidence_id` is present. Anything else is not reliable. On an
+unreliable record (including `record is None`), every field result is `unknown`, never
+`mismatch` — absence of evidence yields `unverified`, never `contradiction_detected`.
+
+**Required fields:** `registration_no`, `manufacturer`, `model_scope`, `validity`.
+**Optional fields:** `factory_location`, `category`, `brand`.
+
+**A value missing on either side (claim or record) is `unknown` for that field** — this rule
+is the same for every field, including `registration_no`: a claim with no registration number,
+or a record with none, is `unknown`, not `mismatch`.
+
+**Overall result (first match wins):**
+
+1. Any `mismatch` on a required field, against a reliable record -> `contradiction_detected`.
+2. Mismatch only on optional field(s) (no required mismatch) -> `unverified`, with the mismatched
+   fields listed in `conflicts`.
+3. Any required field `unknown` or `partial` -> `unverified`.
+4. All required fields `match` and the record is currently valid -> `verified`.
+
+**Validity.** Evaluated against the `as_of` date passed in by the caller, never the clock.
+`as_of` after `valid_to`, `as_of` before `valid_from`, or `status` in `inactive_statuses` ->
+validity `mismatch` (with a reliable record). `as_of == valid_from` and `as_of == valid_to` are
+both inside the valid range. Missing `valid_from`, `valid_to` or `status` on a reliable record
+-> validity `unknown`.
+
+**Output wording.** Use "potential certification mismatch" and "could not verify". Never the
+words "fraud" or "fake", anywhere in `reasoning` or `seller_request_list`.
+
+**Seller request list.** One sentence per conflicting or unknown-required field, built only from
+values already present on the claim. A field whose claim-side value is missing contributes no
+sentence that names that field's value — never invent a value to ask about.
 
 ## 7. Rate evidence and human approval
 
@@ -294,3 +364,98 @@ Section 6: reserved for the verification step, not yet written.
   warns about them.
 - **Accepted deviations:** `cost_engine.py` lines rewritten for non-duty ranges; a lone range bound is rejected;
   a leading `www.` is not a separate domain; the builder's `UnchangedResult`; extra `CheckResult` fields.
+
+## 8. Rules, classification and risk (proposed, to confirm)
+
+Code: `app/decision/rules/rule_engine.py`, `app/decision/classifier.py`, `app/decision/risk_engine.py`.
+Data: `app/decision/rules/<category>_rules.yaml`, `app/decision/classifier_config.yaml`,
+`app/decision/risk_weights.yaml`.
+
+**All rule content requires human verification against official sources before the demo.** The rules file and
+every rule carry that `content_status`, and each check's reasoning repeats it. Source links are portal home
+pages only.
+
+### Rule format
+
+- One file per category, `<category>_rules.yaml`, with `category`, `rules_version`, `content_status` and `rules`.
+  The category name must match `^[a-z][a-z0-9_]*$`, so it cannot point outside the rules folder. A category with
+  no file has no rules (empty list).
+- Each rule: `id`, `category`, `area`, `condition`, `result_if_true`, `requires_evidence`, `source_urls`,
+  `version`, `effective_date`, `last_reviewed`, `mandatory` (default true), `prohibition` (default false),
+  `content_status`. Unknown keys, duplicate ids, or a rule category that differs from the file are rejected.
+  One bad rule rejects the whole file.
+- `result_if_true` may only be `potentially_applicable`, `unverified` or `not_applicable`. A rule alone can never
+  claim `verified` or `contradiction_detected`; those need evidence.
+- All five Bluetooth speaker rules (import_policy, bis, wireless, battery, labelling) are **mandatory**.
+
+### Condition format
+
+- A condition is a structured dict, **never an expression string** (the PRD's `"category == '...'"` form is
+  rejected).
+- Leaf: exactly `{field, op, value}`. `field` is a lowercase name, optionally dotted for nested dicts
+  (`a.b`). `op` is one of `eq`, `ne`, `in`, `not_in`, `gte`, `lte`, `contains`.
+- Combinators, one key each: `{all: [...]}`, `{any: [...]}` (non-empty lists), `{not: {...}}`.
+- Values are str, bool or int (lists of these for `in`/`not_in`; int only for `gte`/`lte`). Floats are rejected.
+- Limits checked at load: depth at most 8, at most 64 nodes.
+
+### Safe evaluator
+
+- A hand-written recursive matcher walks the dict. No `eval`, `exec`, `compile` or attribute access; field
+  lookup only reads dict keys.
+- Three-valued: each node is true, false or unknown.
+  - A leaf is unknown when the field is missing or `None`, or its type does not match the value (a bool never
+    equals an int; a string never equals a number).
+  - `all`: false if any child is false, else unknown if any child is unknown, else true. `any` mirrors it.
+    `not` keeps unknown as unknown.
+- Status from the condition:
+  - false -> `not_applicable`.
+  - unknown -> `unverified`, naming the missing facts. **A missing fact never yields `not_applicable`.**
+  - true -> evidence decides: any required evidence `contradiction_detected` -> `contradiction_detected`; all
+    required evidence `verified` -> `verified`; otherwise `result_if_true`. Evidence that is present but
+    `unverified` does not change the status (it is named in the reasoning).
+- Evidence is a mapping of evidence type (for example `registration_record`) to `{evidence_id, status}`, where
+  status is `verified`, `unverified` or `contradiction_detected`. The evidence producer (for example the
+  verification engine) is responsible for reliability.
+- `prohibition_applies` is true only when a `prohibition: true` rule's condition is true.
+- Each `RequirementCheck` carries `rule_id`, `rule_version`, `area`, `status`, `reasoning`, `evidence_ids`,
+  `mandatory`, `prohibition_applies` and `requires_evidence`.
+
+### Classification
+
+- Keyword and attribute matching only, on lowercased, accent-folded, punctuation-stripped text; whole words or
+  phrases only.
+- A category is considered only if one of its anchor keywords appears. No anchor for any category ->
+  `unsupported`.
+- Score = sum of matched signal weights (Decimal, capped at 1). Score at or above `confidence_threshold` (0.6) ->
+  `confirmed` (confidence high at or above `high_confidence_threshold`, else medium); below -> `needs_confirmation`,
+  confidence low. A tie between categories -> `needs_confirmation`.
+- HS codes are suggestions marked "suggested, not verified", never a classification.
+
+### Risk engine interpretations
+
+- Only mandatory checks are scored and count for precedence rules 3 and 4.
+- The identity result is scored with the same weights as a check (`verified` 0, `unverified` 2,
+  `contradiction_detected` 3) and counts as a mandatory check. A missing identity result counts as `unverified`.
+- Precedence rule 2 (`insufficient_information`) also fires when quantity or purpose is `None` (treated as a
+  skipped key fact) or when no mandatory check was evaluated. Its risk level follows the score, with a
+  contradiction still forcing high.
+- A prohibition takes precedence over everything, including missing classification.
+- `likely_importable` is always risk `low` (section 2 rule 5), even when bonuses make the score above 1; the score
+  is still reported.
+- The cost estimate never changes the score; it only adds a next action when its rates are unverified or stale.
+- `RiskResult` also carries `evidence_ids` and `rule_versions` (`rule_id@version`).
+
+### Note on the worked demo
+
+The section 3 score of 7 is a **risk-engine input example** (BIS and wireless checks only), not a full five-rule
+run. Running all five mandatory Bluetooth speaker rules on the demo product gives five `potentially_applicable`
+checks, so the score is 10 (still `conditional_import`, high).
+
+### Approved interpretations
+
+- Missing identity result: counts as `unverified`, adds 2 to the score. Approved.
+- No mandatory checks evaluated: outcome is `insufficient_information`, not `likely_importable`. Approved.
+- `likely_importable` is always low risk, even when bonuses push the score above 1. Approved.
+- All three are confirmed by tests: `test_missing_identity_result_counts_as_unverified`,
+  `test_no_mandatory_checks_is_insufficient_information`, `test_likely_importable_is_low_even_with_bonuses`.
+- Still to confirm before demo: rule content and source URLs.
