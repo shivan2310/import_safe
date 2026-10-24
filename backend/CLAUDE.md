@@ -14,3 +14,8 @@ These rules add to the root `CLAUDE.md`; they do not replace it.
 - Absence of evidence yields `unverified`, never `contradiction_detected`.
 - Spec is `docs/prd-backend.md`; `docs/decisions.md` overrides it.
 - Test command: `pytest`, run from `backend/`.
+- Every file write uses an absolute path or a path starting with `backend/`; never rely on the current
+  directory.
+- Run `pwd` before appending to any file.
+- Python: code targets Python 3.10+ and must stay 3.10-compatible (no `StrEnum`, no `datetime.UTC`, no
+  3.11+ only syntax). The local test environment currently runs Python 3.14.

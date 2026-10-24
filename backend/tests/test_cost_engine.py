@@ -423,3 +423,309 @@ def test_global_decimal_precision_does_not_change_result(assumptions):
             result = estimate_cost(golden_inputs(freight_inr=None), assumptions)
         assert result == reference
     assert getcontext().prec == 28  # the caller's context is untouched
+
+
+# ---- staleness and versioning (Step 2 follow-up) -----------------------------------------------
+
+import datetime as _dt  # noqa: E402
+
+from app.decision.cost_config import parse_as_of  # noqa: E402
+
+AS_OF = _dt.date(2026, 10, 24)  # as_of of every placeholder entry
+
+
+def _days(n):
+    return AS_OF + _dt.timedelta(days=n)
+
+
+def _entry(est, name):
+    return next(e for e in est.assumptions if e.name == name)
+
+
+def _with_as_of(**changes):
+    raw = raw_config()
+    for name, as_of in changes.items():
+        raw[name]["as_of"] = as_of
+    return parse_cost_assumptions(raw)
+
+
+def _config_entries(est):
+    skip = set(cost_engine.METHODOLOGY_TO_VERIFY) | set(cost_engine.DERIVED_FROM)
+    return [e for e in est.assumptions if not e.user_supplied and e.name not in skip]
+
+
+def test_fresh_entries_not_stale(assumptions):
+    est = estimate_cost(golden_inputs(), assumptions, today=_days(3))
+    assert est.staleness_checked is True
+    assert est.any_stale is False
+    for e in _config_entries(est):
+        assert e.stale is False
+        assert e.age_days == 3
+        assert e.max_age_days is not None
+
+
+def test_exactly_at_limit_not_stale_one_day_over_stale(assumptions):
+    at_limit = estimate_cost(golden_inputs(), assumptions, today=_days(20))
+    fx = _entry(at_limit, "fx_usd_inr")
+    assert (fx.stale, fx.age_days, fx.max_age_days) == (False, 20, 20)
+    assert at_limit.any_stale is False
+    over = estimate_cost(golden_inputs(), assumptions, today=_days(21))
+    fx = _entry(over, "fx_usd_inr")
+    assert (fx.stale, fx.age_days) == (True, 21)
+    assert "Last checked 2026-10-24, older than 20 days" in fx.note
+    assert over.any_stale is True
+
+
+def test_fx_stale_while_duty_rates_fresh():
+    cfg = _with_as_of(fx_usd_inr="2026-09-01")
+    est = estimate_cost(golden_inputs(), cfg, today=_days(1))
+    stale = {e.name for e in est.assumptions if e.stale is True}
+    assert stale == {"fx_usd_inr"}
+    for name in ("bcd_pct", "sws_pct_of_bcd", "igst_pct"):
+        assert _entry(est, name).stale is False
+    assert est.any_stale is True
+
+
+def test_today_none_skips_staleness(assumptions):
+    est = estimate_cost(golden_inputs(freight_inr=None, insurance_inr=None), assumptions)
+    assert est.staleness_checked is False
+    assert est.any_stale is False
+    for e in est.assumptions:
+        assert e.stale is None
+        assert e.age_days is None
+
+
+def test_future_as_of_not_stale_with_note(assumptions):
+    est = estimate_cost(golden_inputs(), assumptions, today=_days(-4))
+    fx = _entry(est, "fx_usd_inr")
+    assert fx.stale is False
+    assert fx.age_days == -4
+    assert "2026-10-24 is in the future" in fx.note
+    assert est.any_stale is False
+
+
+def test_override_entries_not_checked_and_not_counted():
+    cfg = _with_as_of(bcd_pct="2020-01-01")  # would be stale, but it is overridden
+    est = estimate_cost(golden_inputs(overrides=CostOverrides(bcd_pct=D("25"))), cfg, today=_days(1))
+    bcd = _entry(est, "bcd_pct")
+    assert bcd.user_supplied is True
+    assert bcd.stale is None and bcd.age_days is None
+    assert est.any_stale is False
+
+
+def test_methodology_entries_not_checked(assumptions):
+    est = estimate_cost(golden_inputs(), assumptions, today=_days(1000))
+    for name in cost_engine.METHODOLOGY_TO_VERIFY:
+        assert _entry(est, name).stale is None
+
+
+def _amounts(est):
+    return (est.low, est.expected, est.high, est.per_unit_low, est.per_unit_expected, est.per_unit_high,
+            [(line.label, line.base, line.rate_pct, line.amount) for line in est.breakdown])
+
+
+@pytest.mark.parametrize("kw", [{}, {"freight_inr": None, "insurance_inr": None}])
+def test_staleness_never_changes_amounts(assumptions, kw):
+    plain = estimate_cost(golden_inputs(**kw), assumptions)
+    stale = estimate_cost(golden_inputs(**kw), assumptions, today=_days(1000))
+    assert stale.any_stale is True
+    assert _amounts(plain) == _amounts(stale)
+
+
+@pytest.mark.parametrize("verify_all", [False, True])
+def test_staleness_does_not_change_verified_flags(assumptions, verify_all):
+    cfg = _all_verified(assumptions) if verify_all else assumptions
+    plain = estimate_cost(golden_inputs(), cfg)
+    stale = estimate_cost(golden_inputs(), cfg, today=_days(1000))
+    assert stale.any_stale is True
+    for flag in ("rates_verified", "methodology_unverified", "unverified_assumptions"):
+        assert getattr(plain, flag) == getattr(stale, flag)
+    assert plain.rates_verified is verify_all
+
+
+def test_version_and_effective_date_in_estimate(assumptions):
+    raw = raw_config()
+    assert assumptions.version == raw["version"] == "v0-placeholder"
+    assert assumptions.effective_date == raw["effective_date"] == "2026-10-24"
+    for today in (None, _days(1)):
+        est = estimate_cost(golden_inputs(), assumptions, today=today)
+        assert est.assumptions_version == raw["version"]
+        assert est.assumptions_effective_date == raw["effective_date"]
+
+
+def test_version_and_effective_date_are_read_only(assumptions):
+    with pytest.raises((AttributeError, ValueError, TypeError)):
+        assumptions.version = "other"
+    with pytest.raises((AttributeError, ValueError, TypeError)):
+        assumptions.effective_date = "2027-01-01"
+    assert "version" not in type(assumptions).model_fields
+    assert "effective_date" not in type(assumptions).model_fields
+
+
+def test_metadata_survives_model_copy(assumptions):
+    copied = _all_verified(assumptions)
+    assert copied.version == assumptions.version
+    assert copied.effective_date == assumptions.effective_date
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", 1, "missing"])
+def test_bad_or_missing_version_rejected(value):
+    raw = raw_config()
+    if value == "missing":
+        del raw["version"]
+    else:
+        raw["version"] = value
+    with pytest.raises(ValidationError):
+        parse_cost_assumptions(raw)
+
+
+@pytest.mark.parametrize("value", [None, "", "24-10-2026", "2026-02-30", "2026/10/24", "soon", 20261024, "missing"])
+def test_bad_or_missing_effective_date_rejected(value):
+    raw = raw_config()
+    if value == "missing":
+        del raw["effective_date"]
+    else:
+        raw["effective_date"] = value
+    with pytest.raises(ValidationError):
+        parse_cost_assumptions(raw)
+
+
+def test_effective_date_as_date_object_is_coerced():
+    raw = raw_config()
+    raw["effective_date"] = _dt.date(2026, 10, 24)
+    assert parse_cost_assumptions(raw).effective_date == "2026-10-24"
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, True, "30", None])
+def test_invalid_max_age_days_rejected(value):
+    raw = raw_config()
+    raw["fx_usd_inr"]["max_age_days"] = value
+    with pytest.raises(ValidationError):
+        parse_cost_assumptions(raw)
+
+
+def test_missing_max_age_days_rejected():
+    raw = raw_config()
+    del raw["bcd_pct"]["max_age_days"]
+    with pytest.raises(ValidationError):
+        parse_cost_assumptions(raw)
+
+
+@pytest.mark.parametrize("value", ["2026-13-01", "24/10/2026", "yesterday", "", "2026-10-24T00:00:00"])
+def test_unparseable_as_of_rejected(value):
+    raw = raw_config()
+    raw["igst_pct"]["as_of"] = value
+    with pytest.raises(ValidationError):
+        parse_cost_assumptions(raw)
+
+
+def test_parse_as_of_error_is_clear():
+    with pytest.raises(ValueError, match="not an ISO date"):
+        parse_as_of("24/10/2026")
+    with pytest.raises(ValueError, match="not a valid calendar date"):
+        parse_as_of("2026-02-30")
+    assert parse_as_of("2026-10-24") == AS_OF
+
+
+def test_deterministic_with_today(assumptions):
+    a = estimate_cost(golden_inputs(freight_inr=None), assumptions, today=_days(30))
+    b = estimate_cost(golden_inputs(freight_inr=None), assumptions, today=_days(30))
+    assert a == b
+    assert a.model_dump_json() == b.model_dump_json()
+
+
+@pytest.mark.parametrize("today", [None, _dt.date(2026, 10, 25), _dt.date(2030, 1, 1)])
+def test_golden_case_unchanged_with_staleness(assumptions, today):
+    est = estimate_cost(golden_inputs(), assumptions, today=today)
+    assert by_label(est, "goods_value").amount == D("90000.00")
+    assert by_label(est, "cif").amount == D("102000.00")
+    assert by_label(est, "landing_charge_notional").amount == D("1020.00")
+    assert by_label(est, "assessable_value").amount == D("103020.00")
+    assert by_label(est, "bcd").amount == D("20604.00")
+    assert by_label(est, "sws").amount == D("2060.40")
+    assert by_label(est, "igst").amount == D("22623.19")
+    assert by_label(est, "duties_and_taxes").amount == D("45287.59")
+    assert est.expected == D("154287.59")
+    assert est.per_unit_expected == D("1542.88")
+
+
+def test_stale_default_freight_flags_derived_freight_entry():
+    cfg = _with_as_of(default_freight_low_inr="2026-01-01")
+    est = estimate_cost(golden_inputs(freight_inr=None), cfg, today=_days(1))
+    derived = _entry(est, "freight_inr")
+    assert derived.stale is True
+    assert "default_freight_low_inr" in derived.note
+    assert _entry(est, "default_freight_low_inr").stale is True
+    assert _entry(est, "default_freight_high_inr").stale is False
+    assert est.any_stale is True
+
+
+def test_fresh_default_freight_derived_entry_not_stale(assumptions):
+    est = estimate_cost(golden_inputs(freight_inr=None), assumptions, today=_days(1))
+    assert _entry(est, "freight_inr").stale is False
+
+
+def test_user_provided_freight_not_flagged_by_stale_default():
+    cfg = _with_as_of(default_freight_low_inr="2026-01-01", default_freight_high_inr="2026-01-01")
+    est = estimate_cost(golden_inputs(), cfg, today=_days(1))
+    names = {e.name for e in est.assumptions}
+    assert "freight_inr" not in names and "default_freight_low_inr" not in names
+    assert est.any_stale is False
+
+
+def test_stale_insurance_pct_flags_derived_insurance_entry():
+    cfg = _with_as_of(insurance_pct_of_goods="2026-01-01")
+    est = estimate_cost(golden_inputs(insurance_inr=None), cfg, today=_days(1))
+    assert _entry(est, "insurance_pct_of_goods").stale is True
+    assert _entry(est, "insurance_inr").stale is True
+    supplied = estimate_cost(golden_inputs(), cfg, today=_days(1))
+    assert supplied.any_stale is False
+
+
+def test_other_duty_without_max_age_days_not_checked():
+    raw = raw_config()
+    raw["other_duties"] = [{"label": "extra", "rate_pct": 5, "base": "assessable_value", "source": "s",
+                            "as_of": "2020-01-01", "verified": False}]
+    est = estimate_cost(golden_inputs(), parse_cost_assumptions(raw), today=_days(1))
+    duty = _entry(est, "other_duty:extra")
+    assert duty.stale is None
+    assert "no expiry set, staleness not checked" in duty.note.lower()
+    assert duty.note.startswith("Charged on base: assessable_value")
+    assert est.any_stale is False
+
+
+def test_other_duty_with_max_age_days_is_checked():
+    raw = raw_config()
+    raw["other_duties"] = [{"label": "extra", "rate_pct": 5, "base": "assessable_value", "source": "s",
+                            "as_of": "2020-01-01", "verified": False, "max_age_days": 90}]
+    est = estimate_cost(golden_inputs(), parse_cost_assumptions(raw), today=_days(1))
+    assert _entry(est, "other_duty:extra").stale is True
+    assert est.any_stale is True
+
+
+@pytest.mark.parametrize("bad", [_dt.datetime(2026, 10, 25, 12, 0), "2026-10-25", 20261025])
+def test_today_must_be_a_plain_date(assumptions, bad):
+    with pytest.raises(TypeError):
+        estimate_cost(golden_inputs(), assumptions, today=bad)
+
+
+def test_no_forbidden_words_in_stale_output():
+    cfg = _with_as_of(fx_usd_inr="2026-01-01")
+    text = estimate_cost(golden_inputs(freight_inr=None), cfg, today=_days(1)).model_dump_json().lower()
+    assert "fraud" not in text and "fake" not in text
+
+
+CLOCK_ATTRS = {"today", "now", "utcnow"}
+
+
+@pytest.mark.parametrize("module_file", ["cost_engine.py", "cost_config.py"])
+def test_no_clock_or_time_usage(module_file):
+    path = Path(cost_engine.__file__).with_name(module_file)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            assert node.func.attr not in CLOCK_ATTRS, f"{module_file} calls .{node.func.attr}()"
+        if isinstance(node, ast.Import):
+            assert all(alias.name.split(".")[0] != "time" for alias in node.names)
+        if isinstance(node, ast.ImportFrom):
+            assert (node.module or "").split(".")[0] != "time"

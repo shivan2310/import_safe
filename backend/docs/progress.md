@@ -100,3 +100,72 @@ The existing P1/P2 code, `frontend/`, root `CLAUDE.md`, `README.md`, `docs/STATE
 ## Next step
 
 Step 3: verification engine.
+
+## Step 2 follow-up: staleness and versioning
+
+**Purpose:** detect out-of-date assumption values and stamp every estimate with the assumptions version. Rules: `docs/decisions.md` section 5a.
+
+**Files changed**
+- `app/decision/cost_assumptions.yaml` — added `version` and `effective_date`, and `max_age_days` on every entry (proposed values); no rate, `verified` or owner changed.
+- `app/decision/cost_config.py` — `max_age_days` (positive strict int), strict ISO `as_of` validation, required `version`/`effective_date` exposed as read-only properties, `parse_as_of` helper and `Date` alias.
+- `app/decision/cost_engine.py` — optional `today` argument; per-entry `stale`, `age_days`, `max_age_days`; estimate fields `any_stale`, `staleness_checked`, `assumptions_version`, `assumptions_effective_date`.
+- `tests/test_cost_engine.py` — new tests appended; existing tests unchanged.
+- `docs/decisions.md` — appended section 5a.
+- `docs/progress.md` — appended this section.
+
+**Tests added:** 57 test cases (including parametrized cases) in `tests/test_cost_engine.py`, 57 passed, 0 failed.
+**Full suite:** 139 passed, 0 failed (82 before this change). The golden case is unchanged: INR 154,287.59 total, INR 1,542.88 per unit.
+
+Nothing outside the files listed above was modified in this follow-up.
+
+## Rate evidence and approval
+
+**Purpose:** gather rate evidence into pending proposals, have a person approve or reject each one, and let only approved values reach the cost engine. Rules: `docs/decisions.md` section 7. No live fetcher, scheduler, HTTP endpoint or database exists; fetching uses a fixture fetcher in tests.
+
+**Files created**
+- `app/decision/rates/__init__.py` — empty package marker.
+- `app/decision/rates/provenance.py` — `Provenance` and `EvidenceKind` enums (leaf module, avoids an import cycle).
+- `app/decision/rates/models.py` — candidates, check results, evidence packs, proposals, rejections, approved records, store events, pack hash.
+- `app/decision/rates/policy.yaml` — per-rate policy and refresh budgets (all proposed, to confirm).
+- `app/decision/rates/policy.py` — validated policy model and loader.
+- `app/decision/rates/checks.py` — pure checks (tiers, unit, bounds, number in excerpt, dates, change, benchmark statistics).
+- `app/decision/rates/builder.py` — pure `build_proposal` returning a proposal, rejection or unchanged result.
+- `app/decision/rates/store.py` — append-only JSON-lines event store with `StoreCorruptionError`.
+- `app/decision/rates/data/.gitignore` — keeps the local event log out of git.
+- `app/decision/rates/fetcher.py` — `RateFetcher` protocol and `FixtureFetcher`.
+- `app/decision/rates/updater.py` — `refresh_rates` (proposals, rejections, supersession, fetch errors, budgets).
+- `app/decision/rates/review.py` — review functions and the `list` / `show` / `approve` / `reject` CLI.
+- `app/decision/rates/loader.py` — `load_assumptions_with_store` and `load_assumptions_report`.
+- `tests/rate_helpers.py` — shared test fixtures (not a test module).
+- `tests/test_rate_checks.py`, `tests/test_rate_builder.py`, `tests/test_rate_store.py`, `tests/test_rate_updater.py`, `tests/test_rate_review.py`, `tests/test_rate_loader.py` — new tests.
+
+**Files changed**
+- `app/decision/cost_config.py` — `provenance`, `evidence_kind`, `evidence_note`, `range_low`/`range_high` on assumptions (ranges only on non-duty entries), `RANGE_FIELDS`, `verified_counts()`.
+- `app/decision/cost_engine.py` — copies provenance and evidence kind to entries, uses non-duty ranges in the low/high scenarios when both bounds are set, adds `any_human_approved`, `rates_verified_count`, `rates_total`.
+- `docs/decisions.md` — appended sections 6 (placeholder) and 7.
+- `docs/progress.md` — appended this section.
+
+**Tests added:** 204 (test_rate_checks 81, test_rate_builder 51, test_rate_review 23, test_rate_loader 21, test_rate_updater 16, test_rate_store 12), 204 passed, 0 failed.
+**Full suite:** 343 passed, 0 failed (139 before this change). Existing tests are textually unchanged. The golden case is unchanged: INR 154,287.59 total, INR 1,542.88 per unit, including when loaded through the store with the YAML values.
+
+Nothing outside the files listed above was modified in this step.
+
+## Rate approval follow-up: fallback note, fixture safety, housekeeping
+
+**Files changed**
+- `app/decision/rates/models.py` — `Candidate.is_fixture`, `SourceRef.fixture`, `EvidencePack.fixture_data`, `RateRecord.fixture` and `fallback_note`, `ProposalApproved.fixture_allowed`.
+- `app/decision/rates/fetcher.py` — `FixtureFetcher` marks returned candidates as fixture data.
+- `app/decision/rates/builder.py` — carries the fixture flag into sources and the pack.
+- `app/decision/rates/store.py` — sets the fallback note and warning when a newer approval is ignored.
+- `app/decision/rates/loader.py` — adds the fallback sentence and fixture marker to entry notes; warns on fixture-approved records.
+- `app/decision/rates/review.py` — `show` labels fixture data; `approve` refuses it without `--allow-fixture`.
+- `app/decision/cost_assumptions.yaml` — restored the header comment ("nothing in this file is an official rate"); no value changed.
+- `CLAUDE.md` (backend) — added rules: absolute or `backend/` paths for writes, `pwd` before appending, Python 3.10+ compatibility.
+- `docs/decisions.md` — section 5a note on placeholder `as_of`; section 7 "Additions (after review)".
+- `tests/rate_helpers.py` — the `approve` helper takes `allow_fixture` (default False).
+- `tests/test_rate_updater.py` — two calls now pass `allow_fixture=True` (they approve fixture proposals); no expected value changed.
+
+**Files created:** `tests/test_rate_fixture_and_fallback.py` — 14 tests, 14 passed.
+**Full suite:** 357 passed, 0 failed (343 before). The golden case is unchanged: INR 154,287.59 total, INR 1,542.88 per unit.
+
+Nothing outside the files listed above was modified in this follow-up.

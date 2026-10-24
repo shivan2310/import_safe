@@ -1,0 +1,3 @@
+# Local rate event log (append-only, written by app/decision/rates/store.py). Not committed.
+*
+!.gitignore
