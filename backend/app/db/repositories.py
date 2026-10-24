@@ -549,3 +549,78 @@ async def get_cost_estimate(executor: Executor, investigation_id: str) -> Option
         investigation_id,
     )
     return CostEstimateRow(**dict(record)) if record is not None else None
+
+
+# ---------------------------------------------------------------------------
+# Order inputs
+# ---------------------------------------------------------------------------
+
+async def save_order_input(
+    executor: Executor,
+    investigation_id: str,
+    *,
+    freight_inr: Optional[Any] = None,
+    insurance_inr: Optional[Any] = None,
+    url: Optional[str] = None,
+    quantity: Optional[int] = None,
+    purpose: Optional[str] = None,
+    variant: Optional[str] = None,
+    destination_state: Optional[str] = None,
+    destination_city: Optional[str] = None,
+    seller_certificates: Optional[Any] = None,
+) -> None:
+    """Persist the buyer's order inputs for later retrieval. Upserts."""
+    require_ulid(investigation_id, "investigation id")
+    shipping_amount = money_text(freight_inr) if freight_inr is not None else None
+    insurance = money_text(insurance_inr) if insurance_inr is not None else None
+    try:
+        await executor.execute(
+            "INSERT INTO order_inputs (investigation_id, shipping_amount, insurance) "
+            "VALUES ($1, $2, $3) "
+            "ON CONFLICT (investigation_id) DO UPDATE SET "
+            "shipping_amount = EXCLUDED.shipping_amount, insurance = EXCLUDED.insurance",
+            investigation_id, shipping_amount, insurance,
+        )
+    except asyncpg.ForeignKeyViolationError:
+        raise InvestigationNotFoundError(f"investigation {investigation_id} does not exist") from None
+
+
+# ---------------------------------------------------------------------------
+# Progress events
+# ---------------------------------------------------------------------------
+
+async def add_progress_event(
+    executor: Executor,
+    investigation_id: str,
+    *,
+    stage: str,
+    state: str,
+    message: str,
+    at: datetime,
+) -> str:
+    """Append a progress event. Returns the new event id."""
+    require_ulid(investigation_id, "investigation id")
+    _nonempty(stage, "stage")
+    _nonempty(state, "state")
+    _aware(at, "at")
+    event_id = new_ulid()
+    try:
+        await executor.execute(
+            "INSERT INTO progress_events (id, investigation_id, stage, state, message, at) "
+            "VALUES ($1, $2, $3, $4, $5, $6)",
+            event_id, investigation_id, stage, state, message, at,
+        )
+    except asyncpg.ForeignKeyViolationError:
+        raise InvestigationNotFoundError(f"investigation {investigation_id} does not exist") from None
+    return event_id
+
+
+async def list_progress_events(executor: Executor, investigation_id: str) -> List[Dict[str, Any]]:
+    """All events for an investigation in chronological order."""
+    require_ulid(investigation_id, "investigation id")
+    records = await executor.fetch(
+        "SELECT stage, state, message, at FROM progress_events "
+        "WHERE investigation_id = $1 ORDER BY at ASC, id ASC",
+        investigation_id,
+    )
+    return [dict(r) for r in records]
