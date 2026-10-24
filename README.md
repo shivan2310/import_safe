@@ -1,118 +1,258 @@
 # ImportSafe — "Can I Import This?"
 
+**Smart import risk checks for Indian buyers.** Paste a product URL (from Alibaba or anywhere), answer a few questions, and get a complete import risk report with evidence, costs and next steps.
+
 HackIIITD 2026 · Team Vinland Crusaders
 
-ImportSafe takes an Alibaba (or other foreign) product URL and is being built to help an Indian
-buyer understand whether, and at what cost and risk, the product can be imported.
+---
 
-## Problem
+## The Problem
 
-Importers often find out about HS classification, BIS/WPC requirements, duties and fake or
-unverifiable seller certificates only after money is committed. ImportSafe aims to surface this
-up front with evidence, and to say "unknown" instead of guessing when evidence is missing.
+When you import something from abroad, surprises come late:
+- **BIS/WPC approvals** — will your gadget be blocked at customs?
+- **Duties and taxes** — how much will actually land on your desk?
+- **Fake certificates** — is the seller's "BIS certified" claim real?
+- **Hidden costs** — freight, landing charges, import taxes all add up.
 
-## What works today (P1 + P2)
+By the time you find out, you've already paid the supplier.
 
-- Paste a product URL in the web UI and click Analyze.
-- Backend fetches the page with TinyFish and extracts product data (title, seller, price, currency,
-  MOQ, description, specifications, model, material, voltage, Bluetooth, Wi-Fi, battery, battery type,
-  seller certification claims, image, source URL).
-- Raw retrieval evidence and the normalized product are kept separately.
-- Missing values stay null and are listed in `missing_fields`; nothing is invented.
-- Certification claims are returned as unverified `SELLER_CLAIM`s.
-- Clear error codes for invalid URL, TinyFish failure, unavailable page and incomplete extraction.
-- LIVE and DEMO modes (a single sample Bluetooth-headphones product for demo reliability).
+## What ImportSafe Does
 
-## Architecture
+1. **Paste a product URL** → We fetch and read the listing
+2. **Ask a few quick questions** → Model number, quantity, destination, intent to resale or personal use
+3. **Run automated checks** → HS classification, BIS/WPC rules, certificate matching, landed cost
+4. **Get a risk report** → Import status (Likely Safe / Conditional / High Risk), with evidence and next actions
+5. **Export and act** → Copy a seller request checklist or export the full report
 
-```
-React frontend
-→ POST /api/v1/analyze
-→ FastAPI
-→ TinyFish (live)  /  demo fixture (labelled)
-→ raw evidence
-→ normalization
-→ product result
-```
+**Every claim in the report traces back to evidence.** Missing data is marked as unknown, never guessed.
 
-## Tech stack (all free)
+---
 
-- Frontend: React, Vite, TypeScript
-- Backend: Python, FastAPI, Pydantic, HTTPX
-- Retrieval: TinyFish (free-tier API key)
-
-Planned: SQLite, Tailwind, React Router, TanStack Query.
-
-## Folders
+## How It Works
 
 ```
-frontend/   React + Vite app
-backend/    FastAPI app (app/), tests (tests/)
-docs/       STATE.md — compact project state
+┌─────────────────────────────────────────────────────────────────┐
+│  YOU (Browser)                                                  │
+│  Paste URL + answer questions → Click "Investigate"            │
+└────────────────────────────┬──────────────────────────────────────┘
+                             │
+                  ┌──────────▼──────────┐
+                  │  FRONTEND (React)  │
+                  │  - Form            │
+                  │  - Progress bars   │
+                  │  - Risk report     │
+                  └──────────┬──────────┘
+                             │
+                  ┌──────────▼──────────────┐
+                  │  BACKEND (FastAPI)     │
+                  │  - Extract product     │
+                  │  - Check HS code       │
+                  │  - Verify certificates │
+                  │  - Calculate cost      │
+                  │  - Generate report     │
+                  └──────────┬──────────────┘
+                             │
+            ┌────────────────┼────────────────┐
+            │                │                │
+    ┌───────▼────┐  ┌────────▼────┐  ┌──────▼──────┐
+    │ TinyFish   │  │ Official    │  │ Demo        │
+    │ (live web) │  │ registries  │  │ fixtures    │
+    │            │  │ (BIS, etc)  │  │ (fallback)  │
+    └────────────┘  └─────────────┘  └─────────────┘
 ```
 
-## Setup
+---
 
-### Backend
+## Quick Start
 
-```
+### 1. Backend Setup
+
+```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate          # Windows; use source .venv/bin/activate elsewhere
+.venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env          # then edit .env
+copy .env.example .env
+```
+
+Then edit `.env` and add a TinyFish API key (free tier):
+```
+TINYFISH_API_KEY=your_key_here
+```
+
+Run:
+```bash
 python -m uvicorn app.main:app --port 8000
 ```
 
-Tests: `python -m pytest -q` (uses a mocked TinyFish; no key needed).
+Test with: `python -m pytest -q` (no key needed — uses demo data)
 
-### Frontend
+### 2. Frontend Setup
 
-```
+```bash
 cd frontend
 npm install
-copy .env.example .env          # VITE_API_BASE_URL=http://localhost:8000
-npm run dev                     # http://localhost:5173
+copy .env.example .env
+npm run dev
 ```
 
-Production build check: `npm run build`.
+Then open `http://localhost:5173` in your browser.
 
-### TinyFish key
+### 3. Try the Demo
 
-Get a free API key from TinyFish and set it in `backend/.env`:
+Click **"Try demo: 100 Bluetooth speakers"** to see the full flow without a real product URL.
+
+---
+
+## What's Built (Phase 1 & 2)
+
+✅ **Product extraction** — Title, seller, price, specs, model, certification claims from live pages  
+✅ **Evidence tracking** — Every fact keeps its source URL and retrieval time  
+✅ **No invented data** — Missing values stay "unknown"; never guessed  
+✅ **Six-stage progress** — Live updates as the investigation runs  
+✅ **Follow-up questions** — Asks for missing model numbers, certificate details  
+✅ **Live + Demo mode** — Real data when TinyFish works, cached fixtures as fallback  
+
+---
+
+## Architecture
+
+| Layer | Job | Tools |
+|-------|-----|-------|
+| **Frontend** | Form, progress, risk report, export | React, Vite, TypeScript, Tailwind |
+| **Backend** | Extract, classify, verify, cost, risk | Python, FastAPI, Pydantic |
+| **Data sources** | Product pages & official registries | TinyFish API, demo fixtures |
+
+**Design principle:** Backend owns all logic. Frontend just displays results. Every claim has evidence.
+
+---
+
+## Project Structure
 
 ```
-TINYFISH_API_KEY=<your key>
+frontend/          React + Vite app
+  src/
+    pages/         NewInvestigation, Investigation, Report, History
+    components/    Form, progress, badges, cost panel, etc.
+    api/           Mock backend (for now) + real API client
+    types.ts       Shared TypeScript interfaces
+
+backend/           FastAPI app
+  app/
+    main.py        Server entry
+    routes.py      /health, /api/v1/analyze
+    schemas.py     Request/response types
+    services/      TinyFish, extraction, normalization
+  tests/           Tests (mocked TinyFish)
+
+docs/
+  STATE.md         Current architecture & limits
 ```
 
-Never commit `.env`. Other backend variables: `TINYFISH_BASE_URL`, `TINYFISH_TIMEOUT_S`,
-`ALLOW_DEMO_FALLBACK`, `CORS_ORIGINS` (see `backend/.env.example`).
+---
 
-## LIVE vs DEMO mode
+## Features in Detail
 
-- **LIVE** (default): the URL is retrieved through TinyFish.
-- **DEMO**: send `"mode": "demo"`, or let the backend fall back when live retrieval fails or no key is
-  set (`ALLOW_DEMO_FALLBACK=true`, the default). Demo responses have `retrieval_mode: "demo"`,
-  `raw.provider: "demo_fixture"` and a `fallback_reason`; the UI badge reads "DEMO DATA".
-  Demo data is a hand-written sample, never live data. Set `ALLOW_DEMO_FALLBACK=false` to surface
-  real failures as errors instead.
+### Product Extraction
+- Reads live Alibaba/foreign product listings via TinyFish
+- Extracts: title, seller, price, currency, MOQ, specs, model, material, certifications
+- Falls back to demo fixture if page is blocked or TinyFish fails
 
-## API summary
+### Requirement Checks
+- **HS Classification** — what customs code does this product belong in?
+- **BIS approval** — is it required? Is the claim verified?
+- **Wireless approval (WPC)** — does this device need it?
+- **Certificates** — are seller claims matched against official records?
 
-- `GET /health` → `{"status": "ok"}`
-- `POST /api/v1/analyze` — body `{"url": "...", "mode": "live" | "demo"}`; returns `mode`,
-  `retrieval_mode`, `product`, `missing_fields`, `fallback_reason`, `raw`.
-  Errors: `{"detail": {"code", "message"}}` with `invalid_url`, `tinyfish_not_configured`,
-  `tinyfish_failure`, `page_unavailable`, `incomplete_extraction`.
+### Cost Breakdown
+- Goods value (FOB) → Freight → Insurance → Duties → Taxes → Final landed cost
+- Shows **low / expected / high** ranges (accounting for uncertain rates and FX)
+- All assumptions shown and editable
+- Label: "Illustrative estimate, not a quote"
 
-## Current limitations
+### Risk Report
+- **Outcome:** Likely Safe / Conditional / High Risk / Insufficient Data
+- **Risk level:** Low / Medium / High
+- **Next action:** What to do before ordering
+- **Evidence drawer:** Every source with URL and retrieval time
 
-- No HS classification, BIS/WPC compliance engine, independent certificate verification,
-  tariff/landed-cost calculation or risk engine yet.
-- The TinyFish endpoint path was taken from its docs and has not yet been verified with a live key.
-- The UI shows only a few product fields.
+---
+
+## Limitations (Phase 1 & 2)
+
+❌ HS classification not yet live (backend ready, demo data only)  
+❌ BIS/WPC compliance engine not yet live (demo statuses only)  
+❌ Certificate verification not yet live (shows as "unverified")  
+❌ Landed cost calculations using placeholder rates (demo only)  
+❌ No "enter details manually" fallback for blocked pages  
+
+These are built in **Phase 3 & 4** — in progress.
+
+---
+
+## Tech Stack (All Free)
+
+- **Frontend:** React 18, Vite 5, TypeScript, Tailwind 3, React Router, TanStack Query v5, Lucide icons
+- **Backend:** Python 3.9+, FastAPI, Pydantic, HTTPX, pytest
+- **APIs:** TinyFish (free tier for web extraction)
+- **Database:** None yet (Phase 3)
+
+---
 
 ## Roadmap
 
-- **P3**: HS classification, compliance engine, certification/evidence.
-- **P4**: landed cost, risk, pre-import checklist, report.
+| Phase | What | Status |
+|-------|------|--------|
+| **P1** | Form, progress UI, mock report | ✅ Done |
+| **P2** | TinyFish extraction, normalization | ✅ Done |
+| **P3** | HS classification, compliance rules, certificate matching | 🚧 Next |
+| **P4** | Landed cost, risk scoring, export, history | 📋 Planned |
+
+---
+
+## Demo Scenario
+
+**Input:**  
+- Product: Alibaba Bluetooth speaker  
+- Quantity: 100  
+- Purpose: Resale  
+- Destination: Delhi  
+
+**Output:**  
+- **Outcome:** Conditional Import  
+- **Risk:** HIGH (requires verification)  
+- **Why:** BIS approval needed but claim is unverified, wireless approval check required  
+- **Next action:** Pause purchase, get correct certification evidence, resolve wireless requirement  
+- **Cost:** ~₹1,850/unit (with visible assumptions and ranges)  
+
+---
+
+## Important Notes
+
+### Security
+- URLs validated (no internal IPs, no SSRF)
+- TinyFish key is server-side only
+- All page text treated as data (never executed)
+- All user input sanitized
+
+### Privacy
+- No accounts needed (session-only MVP)
+- Investigations auto-expire after 30 days
+- DELETE removes all evidence and data
+
+### Accuracy
+- Every conclusion linked to evidence URL and rule version
+- Unknowns marked as such (not guessed)
+- No "fraud" or "fake" language — only "potential mismatch" and "unverified"
+
+---
+
+## Support & Docs
+
+- **Architecture details:** See `docs/STATE.md`
+- **API endpoints:** See backend README
+- **Issues:** Check [GitHub](https://github.com/shivan2310/import_safe)
+
+---
+
+**ImportSafe is decision support. It is not legal clearance, customs approval or a duty quote.**

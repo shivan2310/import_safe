@@ -1,0 +1,126 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;450;500;550;600&display=swap');
+
+.login-page {
+  --cream: #F6F1E4; --sage-light: #DCE5D0; --sage: #A9BC98; --sage-deep: #6B7F5A;
+  --forest: #2F3B2B; --muted: #7C8A72; --clay: #B5654A; --success: #7FA06A;
+  /* Accessible text companions; the original palette remains available above. */
+  --text-muted: #59654F; --text-link: #506343;
+  position: relative; isolation: isolate; box-sizing: border-box; min-height: 100svh;
+  display: grid; place-items: center; overflow: hidden; padding: 110px 24px;
+  background: linear-gradient(135deg, var(--cream) 12%, #EDEEDC 53%, var(--sage-light));
+  color: var(--forest); font: 400 14px/1.6 'Inter', sans-serif;
+}
+.login-page *, .login-page *::before, .login-page *::after { box-sizing: border-box; }
+.login-page button, .login-page input { font: inherit; }
+.login-page a { color: var(--text-link); text-underline-offset: 4px; }
+.login-page a:focus-visible, .login-page button:focus-visible { outline: 2px solid var(--sage-deep); outline-offset: 5px; }
+.login-wash, .login-grain, .flight-scene { position: absolute; inset: 0; pointer-events: none; }
+.login-wash { z-index: 0; overflow: hidden; }
+.login-blob { position: absolute; width: 48vw; height: 48vw; border-radius: 50%; filter: blur(85px); opacity: .3; animation: blob-drift 20s ease-in-out infinite alternate; will-change: transform; }
+.blob-sage { background: var(--sage); right: -15%; top: -18%; }
+.blob-gold { background: #EFE3C2; left: -18%; bottom: -35%; animation-delay: -10s; }
+.login-grain { z-index: 5; opacity: .04; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23000' filter='url(%23n)' opacity='.8' d='M0 0h180v180H0z'/%3E%3C/svg%3E"); }
+.login-brand { position: absolute; top: 34px; left: 48px; z-index: 6; display: flex; align-items: center; gap: 10px; text-decoration: none; font-size: 22px; font-weight: 550; letter-spacing: -1px; color: var(--forest) !important; }
+.brand-symbol { width: 34px; display: inline-flex; transform: rotate(-12deg); }
+.brand-symbol svg { width: 100%; }
+.brand-dot { margin-left: -10px; color: var(--sage-deep); }
+.flight-scene { z-index: 3; will-change: transform; }
+.main-flight { position: absolute; left: 0; top: 0; width: 150px; offset-path: shape(from 112% -15%, curve to 35% 37% with 98% 6% / 42% 10%, curve to 90% 34% with 26% 70% / 88% 67%, curve to 56% 66% with 92% 6% / 45% 29%, curve to 114% 122% with 65% 94% / 108% 80%); offset-rotate: auto; will-change: transform; }
+/* The SVG points toward the upper right; compensate for the path tangent. */
+.hero-plane { display: block; width: 150px; transform: rotate(34deg); filter: drop-shadow(0 3px 2px #6b7f5a12); }
+.plane-wobble, .plane-exit { position: relative; will-change: transform; }
+.plane-shadow { position: absolute; width: 100px; height: 22px; left: 14px; top: 92px; background: #6b7f5a22; border-radius: 50%; filter: blur(12px); animation: shadow-height 24s ease-in-out infinite; }
+.flight-trail { position: absolute; width: 100%; height: 100%; overflow: visible; opacity: .25; mask-image: linear-gradient(transparent 6%, black 25%, black 70%, transparent 94%); }
+.flight-trail path { fill: none; stroke: var(--sage-deep); stroke-width: 1; stroke-dasharray: 2 10; stroke-linecap: round; animation: trail-flow 24s linear infinite; }
+.background-flight { position: absolute; z-index: -1; width: 60px; opacity: .5; filter: blur(3px); offset-rotate: auto; will-change: transform; }
+.background-flight svg { width: 100%; }
+.background-flight-0 { offset-path: shape(from -10% 60%, curve to 110% 15% with 30% -10% / 65% 70%); }
+.background-flight-1 { offset-path: shape(from 100% 100%, curve to -10% 20% with 70% 10% / 30% 80%); }
+.login-card { position: relative; z-index: 4; width: min(100%, 446px); padding: 43px 43px 33px; background: rgba(255,252,243,.65); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(107,127,90,.25); border-radius: 20px; box-shadow: 0 24px 70px #52644212, 0 4px 15px #52644208, inset 0 1px 0 #ffffff80; will-change: transform; }
+.login-card::after { content: ''; position: absolute; inset: -1px; border: 1px solid var(--sage); border-radius: inherit; box-shadow: 0 0 25px #a9bc9835; opacity: 0; pointer-events: none; transition: opacity .3s; }
+.is-focused .login-card::after { opacity: 1; }
+.is-error .login-card::after { border-color: var(--clay); box-shadow: 0 0 22px #b5654a30; opacity: 1; animation: error-flash .35s ease-in-out 2; }
+.card-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 23px; color: var(--text-muted); font-size: 9px; font-weight: 550; letter-spacing: 1.55px; }
+.card-kicker > span, .bottom-note > span { width: 5px; height: 5px; border-radius: 50%; background: var(--sage-deep); }
+.login-card h1 { margin: 0 0 8px; font: 400 clamp(36px, 5vw, 43px)/1.18 'Fraunces', Georgia, serif; letter-spacing: -1.6px; color: var(--forest); }
+.login-card h1 > span { color: var(--sage-deep); }
+.login-subtitle { margin: 0 0 28px; color: var(--text-muted); font-size: 12px; }
+.login-field { position: relative; margin-top: 13px; height: 64px; }
+.login-field input { width: 100%; height: 100%; padding: 24px 0 9px; border: 0; border-bottom: 1px solid #a9bc98b3; border-radius: 0; background: transparent; outline: none; color: var(--forest); font-size: 14px; box-shadow: none; }
+.login-field label { position: absolute; left: 0; top: 23px; color: var(--text-muted); pointer-events: none; transform-origin: left top; transition: transform .2s; }
+.login-field input:focus + label, .login-field input:not(:placeholder-shown) + label { transform: translateY(-18px) scale(.78); }
+.field-line { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--sage-deep); box-shadow: 0 2px 8px #a9bc9860; transform: scaleX(0); transform-origin: left; transition: transform .25s; }
+.login-field input:focus ~ .field-line { transform: scaleX(1); }
+.password-field input { padding-right: 38px; }
+.password-toggle { position: absolute; right: -6px; bottom: 7px; display: grid; place-items: center; width: 36px; height: 36px; padding: 8px; border: 0; background: transparent; color: var(--text-link); cursor: pointer; }
+.password-toggle svg { width: 20px; height: 20px; }
+.forgot-row { margin: 14px 0 24px; text-align: right; font-size: 11px; }
+.forgot-row a { text-decoration: none; }
+.forgot-row a:hover, .signup-copy a:hover { text-decoration: underline; }
+.login-submit { position: relative; display: flex; justify-content: center; align-items: center; gap: 10px; width: 100%; min-height: 49px; padding: 12px 16px; border: 0; border-radius: 8px; background: var(--sage-deep); color: var(--cream); font-weight: 700; font-size: 19px; cursor: pointer; transition: transform .2s; isolation: isolate; }
+.login-submit::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: linear-gradient(120deg, #748865, #637953); opacity: 0; transition: opacity .2s; }
+.login-submit:hover:not(:disabled) { transform: translateY(-2px); }
+.login-submit:hover::before { opacity: 1; }
+.login-submit > span:last-child:not(.login-spinner) { position: absolute; right: 19px; font-size: 18px; font-weight: 400; }
+.login-submit:disabled { cursor: default; }
+.is-success .login-submit { font-size: 12px; background: var(--success); color: var(--forest); }
+.is-success .login-submit::before { opacity: 0; }
+.is-success .login-submit svg { width: 20px; height: 20px; color: var(--cream); }
+.login-spinner { width: 15px; height: 15px; border: 2px solid #f6f1e450; border-top-color: var(--cream); border-radius: 50%; animation: spinner .7s linear infinite; }
+.login-feedback { min-height: 19px; margin: 10px 0 23px; text-align: center; font-size: 10px; color: var(--text-muted); }
+.login-feedback.has-error { color: #93472F; }
+.card-divider { display: flex; align-items: center; gap: 12px; font-size: 8px; letter-spacing: 1.3px; color: var(--text-muted); white-space: nowrap; }
+.card-divider span { height: 1px; flex: 1; background: #a9bc9855; }
+.signup-copy { text-align: center; color: var(--text-muted); font-size: 12px; margin: 21px 0 0; }
+.signup-copy a { margin-left: 4px; text-decoration: none; font-weight: 600; }
+.login-bottom { position: absolute; z-index: 6; bottom: 28px; left: 48px; right: 48px; display: flex; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: 11px; }
+.bottom-note { display: flex; align-items: center; gap: 8px; font-size: 9px; letter-spacing: 1.5px; }
+@keyframes blob-drift { to { transform: translate(70px, -45px) scale(1.12); } }
+/* Offset-path and trail dash offset are required exceptions to transform-only animation. */
+@keyframes trail-flow { from { stroke-dashoffset: 120; opacity: 0; } 15%, 70% { opacity: 1; } to { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes spinner { to { transform: rotate(360deg); } }
+@keyframes error-flash { 50% { opacity: .2; } }
+@keyframes shadow-height { 0%, 100% { transform: translateY(15px) scale(.7); opacity: .25; } 45% { transform: translateY(45px) scale(1.3); opacity: .55; } }
+@media (max-width: 600px) {
+  .login-page { padding: 105px 22px 100px; }
+  .login-brand { top: 25px; left: 25px; font-size: 20px; }
+  .login-card { padding: 34px 28px 29px; }
+  .background-flight { display: none; }
+  .hero-plane { width: 105px; }
+  .main-flight { width: 105px; }
+  .login-bottom { left: 25px; right: 25px; bottom: 24px; justify-content: center; font-size: 10px; }
+  .bottom-note { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-page *, .login-page *::before, .login-page *::after { animation: none !important; transition: none !important; }
+  .main-flight { offset-path: none; top: 18%; left: 77%; transform: rotate(-12deg); }
+  .background-flight, .flight-trail { display: none; }
+  .login-submit:hover:not(:disabled) { transform: none; }
+}
+
+/* Isolate the login from the product analyzer's global form styles. */
+.login-page { max-width: none; width: 100%; margin: 0; }
+.login-card form { background: transparent; border: 0; border-radius: 0; padding: 0; }
+.login-field label { margin: 0; font-weight: 400; }
+.login-page button:disabled { opacity: 1; }
+
+/* Sign-up shares the flight scene and form language with the login screen. */
+.signup-page { padding-top: 110px; padding-bottom: 100px; }
+.signup-page .login-card { width: min(100%, 482px); padding-top: 35px; padding-bottom: 29px; }
+.signup-page .card-kicker { margin-bottom: 17px; }
+.signup-page .login-subtitle { margin-bottom: 21px; }
+.signup-welcome { display: flex; gap: 12px; align-items: center; padding: 13px 14px; border: 1px solid #a9bc9845; background: #dce5d045; border-radius: 10px; margin-bottom: 12px; }
+.signup-welcome-icon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: #dce5d0; color: var(--text-link); font-size: 22px; }
+.signup-welcome strong { display: block; font-size: 11px; font-weight: 600; color: var(--forest); }
+.signup-welcome div > span { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.signup-page .login-field { height: 58px; margin-top: 9px; }
+.signup-password-hint { margin: 7px 0 0; color: var(--text-muted); font-size: 10px; }
+.signup-demo-note { margin: 18px 0; color: var(--text-muted); font-size: 10px; line-height: 1.6; }
+.signup-page .login-feedback { margin-bottom: 18px; }
+.signup-page .login-submit { font-size: 19px; padding-right: 34px; }
+@media (max-width: 600px) {
+  .signup-page { padding: 95px 18px 75px; }
+  .signup-page .login-card { padding: 29px 25px; }
+  .signup-page .card-kicker { font-size: 8px; letter-spacing: 1.2px; }
+  .signup-page .login-bottom { position: absolute; bottom: 20px; }
+}

@@ -1,0 +1,8 @@
+.page-flight-boundary { background: #f6f1e4; min-height: 100svh; }
+.page-flight-overlay { position: fixed; inset: 0; z-index: 1000; overflow: hidden; pointer-events: all; background: transparent; }
+.page-flight-route { position: absolute; inset: 0; width: 100%; height: 100%; }
+.page-flight-traveller { position: absolute; left: 0; top: 0; width: 140px; height: 105px; margin-left: -70px; margin-top: -52px; will-change: transform; }
+.page-flight-traveller > svg { display: block; width: 100%; filter: drop-shadow(0 8px 10px #6b7f5a25); }
+.flight-announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .page-flight-overlay { display: none; } }
+.page-flight-click-ring { position: absolute; width: 58px; height: 58px; margin: -29px 0 0 -29px; border: 2px solid #6b7f5a; border-radius: 50%; box-shadow: 0 0 0 9px #a9bc9825; pointer-events: none; }
