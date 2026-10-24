@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { PublicShell } from './PublicPages';
 import './Landing.css';
+import DeliveryJourney from './DeliveryJourney';
 
 function JourneyIllustration() {
   return <svg className="landing-illustration" viewBox="0 0 540 490" fill="none" role="img" aria-label="A paper plane follows a dotted route around a globe to a parcel in India">
@@ -20,7 +21,7 @@ function JourneyIllustration() {
 export default function Landing() {
   const reduced = useReducedMotion();
   return <PublicShell page="home">
-      <section className="landing-hero" id="home"><motion.div className="landing-hero-copy" initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .65 }}><div className="landing-eyebrow"><span /> FOR CURIOUS MINDS. FOR INDIAN BUYERS.</div><h1>A world of finds<br />A little more <em>clarity</em></h1><p>That product you found overseas? Give your next import a thoughtful beginning. Gather the details, ask better questions, and see your next step more clearly.</p><div className="landing-hero-actions"><a href="#sign-up" className="landing-button">Start your journey </a><a href="#how-it-works" className="landing-text-link">See how it works </a></div><div className="landing-preview-label"><span /> Explore the prototype · No payment required</div></motion.div><motion.div className="landing-hero-art" initial={reduced ? false : { opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: .8 }}><JourneyIllustration /></motion.div></section>
+      <section className="landing-hero" id="home"><motion.div className="landing-hero-copy" initial={reduced ? false : { opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .65 }}><div className="landing-eyebrow"><span /> FOR CURIOUS MINDS. FOR INDIAN BUYERS.</div><h1>A world of finds<br />A little more <em>clarity</em></h1><p>That product you found overseas? Give your next import a thoughtful beginning. Gather the details, ask better questions, and see your next step more clearly.</p><div className="landing-hero-actions"><a href="#sign-up" className="landing-button">Start your journey </a><a href="#how-it-works" className="landing-text-link">See how it works </a></div><div className="landing-preview-label"><span /> Explore the prototype · No payment required</div></motion.div><motion.div className="landing-hero-art" initial={reduced ? false : { opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: .8 }}><div className="delivery-globe"><JourneyIllustration /></div><DeliveryJourney /></motion.div></section>
       <div className="landing-note-strip"><span>FROM A LISTING TO A STARTING POINT</span><div>One product link <i>·</i> Your import details <i>·</i> A clearer next step</div><span>MADE WITH INDIA IN MIND</span></div>
       <section className="home-page-directory"><div className="landing-eyebrow">A LITTLE MORE TO EXPLORE</div><h2>Get to know your next step</h2><div>{[
         ['features', '01', 'The little things, connected.', 'Explore the product workspace, the details it captures, and the research features we’re building.', 'Explore features'],

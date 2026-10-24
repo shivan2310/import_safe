@@ -1,0 +1,20 @@
+/* The scene stays inside the hero artwork, separate from every text column. */
+.landing-hero-art{position:relative;isolation:isolate;min-height:490px;overflow:hidden}
+.delivery-globe{position:absolute;inset:0;opacity:.22;z-index:-1;pointer-events:none}
+.delivery-journey{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;--delivery-right:24px;--parcel-landing:296px}
+.delivery-drop{position:absolute;right:calc(var(--delivery-right) + 4px);top:0;width:144px;transform-origin:50% 0;will-change:transform;animation:delivery-descend 4.5s cubic-bezier(.25,.1,.25,1) .4s both,delivery-hide .2s 4.9s forwards}
+.delivery-canopy{position:absolute;width:144px;height:135px;bottom:49px;left:0;animation:delivery-hide .6s 4.3s forwards}
+.delivery-parcel{display:block;width:66px;height:60px;margin:0 auto;filter:drop-shadow(0 5px 5px #596e4915)}
+.delivery-road{position:absolute;bottom:30px;left:0;right:0;height:27px;background:#dce2d2;border-top:2px solid #a9bc98;border-bottom:2px solid #a9bc98}
+.delivery-road>div{position:absolute;top:11px;width:100%;border-top:2px dashed #fffdf5}
+.delivery-truck-position{position:absolute;bottom:48px;right:var(--delivery-right);width:220px}
+.delivery-truck{display:block;width:220px;height:auto}
+.delivery-truck-label{display:block;text-align:center;font:600 8px Inter,sans-serif;letter-spacing:1.8px;color:#596e49;margin-top:10px}
+.delivery-loaded-parcel{opacity:0;animation:delivery-show .2s 4.9s forwards}
+.delivery-truck-drive{animation:delivery-depart 4s cubic-bezier(.45,0,.7,1) 5.6s forwards}
+@keyframes delivery-descend{0%{transform:translateY(-90px) rotate(-5deg)}40%{transform:translateY(130px) rotate(4deg)}75%{transform:translateY(240px) rotate(-2deg)}100%{transform:translateY(var(--parcel-landing)) rotate(0)}}
+@keyframes delivery-hide{to{opacity:0}}
+@keyframes delivery-show{to{opacity:1}}
+@keyframes delivery-depart{to{transform:translateX(calc(-100% - 600px))}}
+@media(max-width:650px){.landing-hero-art{min-height:420px}.delivery-journey{--delivery-right:12px;--parcel-landing:226px}.delivery-globe{opacity:.16}}
+@media(prefers-reduced-motion:reduce){.delivery-journey *{animation:none!important}.delivery-drop{display:none}.delivery-loaded-parcel{opacity:1}}
