@@ -49,7 +49,7 @@ export default function InvestigationFlow({ order, onBack, onLogout }: { order: 
   }, [phase]);
 
   return <div className="investigation-page research-page">
-    <header className="workspace-header"><a className="workspace-brand" href="#home"><span aria-hidden="true">↗</span> importsafe<span className="workspace-brand-dot">.</span></a><nav aria-label="Workspace"><button onClick={onBack}>← New investigation</button><button onClick={onLogout}>Log out ↗</button></nav></header>
+    <header className="workspace-header"><a className="workspace-brand" href="#home"><img className="site-logo" src="/logo.png" alt="" width="40" height="40" /> importsafe<span className="workspace-brand-dot">.</span></a><nav aria-label="Workspace"><button onClick={onBack}>← New investigation</button><button onClick={onLogout}>Log out ↗</button></nav></header>
     <main className="research-main">
       <div className="research-breadcrumb"><span>Workspace</span><span>/</span><span>{phase === 'report' ? 'Your report' : 'Investigation'}</span><span className="research-mode">INTERACTIVE DEMO</span></div>
       {phase === 'report' ? <RiskReport order={order} facts={facts} generated={generated} onDelete={onBack} titleRef={title} /> : <>

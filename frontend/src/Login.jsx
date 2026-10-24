@@ -133,7 +133,7 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
       }} onPointerLeave={() => { mouseX.set(0); mouseY.set(0); }}>
       <div className="login-wash" aria-hidden="true"><div className="login-blob blob-sage" /><div className="login-blob blob-gold" /></div>
       <div className="login-grain" aria-hidden="true" />
-      <a className="login-brand" href="#home" aria-label="Importsafe home"><span className="brand-symbol"><Plane /></span>importsafe<span className="brand-dot">.</span></a>
+      <a className="login-brand" href="#home" aria-label="Importsafe home"><img className="site-logo" src="/logo.png" alt="" width="40" height="40" />importsafe<span className="brand-dot">.</span></a>
       <motion.div className="flight-scene" style={{ x, y }} aria-hidden="true">
         {[0, 1].map(index => <div key={index} ref={node => { backgroundFlights.current[index] = node; }} className={`background-flight background-flight-${index}`}><Plane /></div>)}
         <svg className="flight-trail" viewBox="0 0 1000 700" preserveAspectRatio="none"><path d={trailPath} /></svg>

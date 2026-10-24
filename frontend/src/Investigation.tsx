@@ -45,7 +45,7 @@ export default function Investigation({ onLogout }: { onLogout: () => void }) {
   }
   if (submitted) return <InvestigationFlow order={submitted} onBack={() => { setSubmitted(null); window.scrollTo(0, 0); }} onLogout={onLogout} />;
   return <div className="investigation-page">
-    <header className="workspace-header"><a className="workspace-brand" href="#analyze"><span aria-hidden="true">↗</span> importsafe<span className="workspace-brand-dot">.</span></a><nav aria-label="Workspace"><span className="workspace-nav-active">New investigation</span><button onClick={onLogout}>Log out <span aria-hidden="true">↗</span></button></nav></header>
+    <header className="workspace-header"><a className="workspace-brand" href="#analyze"><img className="site-logo" src="/logo.png" alt="" width="40" height="40" /> importsafe<span className="workspace-brand-dot">.</span></a><nav aria-label="Workspace"><span className="workspace-nav-active">New investigation</span><button onClick={onLogout}>Log out <span aria-hidden="true">↗</span></button></nav></header>
     <main className="workspace-main">
       <motion.div initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5 }}>
         <div className="workspace-eyebrow"><span /> YOUR IMPORT JOURNEY, A LITTLE CLEARER</div>
