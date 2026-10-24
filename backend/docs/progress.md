@@ -357,3 +357,84 @@ shape the agent returns for our goals and the registry portal URL (`https://www.
 **Full suite:** 775 passed, 0 failed (754 before this step).
 
 Nothing outside the files listed above was modified in this step.
+
+## Step 8: Investigation Coordinator and State Machine
+
+**Purpose:** connect TinyFish, the decision engines and storage into a runnable investigation pipeline.
+Details: docs/decisions.md section 12 (decisions listed below).
+
+**Files created**
+- `app/coordinator/__init__.py` — empty package marker.
+- `app/coordinator/states.py` — `InvestigationState` (13 values), `can_transition`, `stage_progress`,
+  `parse_state`, `PIPELINE`, `TERMINAL`, `RESTING`.
+- `app/coordinator/store.py` — `InvestigationStore` Protocol; `InMemoryStore` (offline/test implementation);
+  `OrderInput`, `ProgressEvent` dataclasses.
+- `app/coordinator/profile_builder.py` — `build_listing_facts`, `build_order_facts`, `profile_from_facts`,
+  `extracted_from_facts`, `rule_profile`, `cert_claim_from_facts`, `registry_record`, `parse_price`,
+  `evidence_items`. Internal `rule_check:*` facts excluded from `_latest` by default.
+- `app/coordinator/coordinator.py` — `run()` and `recalculate_cost()` public API. Seven internal stage
+  functions. MAX_RETRIES=2, RETRY_DELAY_S=2.0. Never raises out of `run`.
+- `tests/test_coordinator.py` — 58 tests covering states, store, profile builder and coordinator.
+
+**Key decisions**
+- `run()` picks up from the stored state and is safe to call multiple times (RESTING states return immediately).
+- Rule check facts saved as `FactKind.confirmed` with a `rule_check:` prefix; excluded from `ProductProfile`
+  by `_latest(include_internal=False)` so they never violate the evidence_id requirement.
+- A confirmed listing fact that has no excerpt is saved as `seller_claim`; the profile builder never invents
+  evidence IDs.
+- `recalculate_cost()` re-runs cost engine and report assembly only; no TinyFish calls.
+- On any unhandled exception `run()` calls `_fail()` and logs; it never propagates the exception to the caller.
+
+**Not verified:** the Postgres-backed `InvestigationStore` implementation is deferred to Step 9 (it needs a
+progress_events table not in the Step 6 schema). `InMemoryStore` is used until then.
+
+**Full suite:** 833 passed, 0 failed (775 before this step).
+
+Nothing outside the files listed above was modified in this step.
+
+## Step 9: Investigation API
+
+**Purpose:** expose the coordinator via HTTP — seven endpoints that the frontend calls to create an
+investigation, poll for progress, answer follow-up questions, update cost assumptions, fetch the full report,
+and delete. Details: docs/prd-backend.md B3.
+
+**Files created**
+- `app/api/investigations.py` — the seven endpoint router, request/response models, session cookie helpers,
+  FastAPI dependency injection (`get_store`, `get_connector`), background task wiring.
+- `app/coordinator/pg_store.py` — Postgres-backed `InvestigationStore` implementation wrapping the Step 6
+  repositories; swapped in at startup when `DATABASE_URL` is set.
+- `tests/test_investigations_api.py` — 25 tests using `TestClient` with `InMemoryStore` via
+  `dependency_overrides`; no database or TinyFish calls.
+
+**Files changed**
+- `app/db/migrations.py` — added `progress_events` table and its RLS + index; added to `TABLES`.
+- `app/db/repositories.py` — added `save_order_input`, `add_progress_event`, `list_progress_events`.
+- `app/main.py` — added `lifespan` (creates DB pool, swaps in Postgres store and appropriate connector when
+  `DATABASE_URL` is set); mounted `investigations_router`.
+- `tests/test_db.py` — updated the hardcoded table set to include `progress_events`; added a
+  `progress_events` seed row in the cascade-delete test.
+
+**Endpoints**
+- `POST /api/investigations` — 201, creates investigation + starts coordinator as background task
+- `GET /api/investigations/{id}` — status, stage list, pending question
+- `GET /api/investigations/{id}/events` — JSON array (or SSE when `Accept: text/event-stream`)
+- `POST /api/investigations/{id}/answers` — answer or skip a follow-up question, resumes coordinator
+- `PATCH /api/investigations/{id}/assumptions` — apply cost overrides, triggers recalculation
+- `GET /api/investigations/{id}/report` — full camelCase report JSON; 425 if not ready
+- `DELETE /api/investigations/{id}` — marks DELETED (InMemoryStore) or hard-deletes (Postgres)
+
+**Key decisions**
+- `dependency_overrides` inject the store and connector in tests; the `lifespan` wires in production values.
+- Session cookie is signed with `SECRET_KEY`; tests set a dummy key via `os.environ.setdefault`.
+- Background tasks run in the same process; the SSE endpoint sends all stored events and closes (clients
+  reconnect to poll).
+- `recalculate_cost` triggered from PATCH runs in a background task, just like the initial `run`.
+- The Postgres store's `force_state` returns `to_state` as the previous value (a minor simplification; the
+  caller only checks None vs non-None).
+
+**Not verified:** the Postgres store has not been run against a real Supabase instance; the `progress_events`
+DDL has not been applied yet. Run `create_tables()` once with `DATABASE_URL` set to apply the new table.
+
+**Full suite:** 858 passed, 0 failed (833 before this step).
+
+Nothing outside the files listed above was modified in this step.

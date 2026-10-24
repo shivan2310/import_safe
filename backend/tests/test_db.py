@@ -205,7 +205,7 @@ def test_schema_defines_exactly_the_expected_tables():
     created = re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", SCHEMA_SQL)
     assert created == list(TABLES)
     assert set(TABLES) == {"investigations", "order_inputs", "facts", "evidence", "questions", "reports",
-                           "cost_estimates", "raw_snapshots"}
+                           "cost_estimates", "raw_snapshots", "progress_events"}
 
 
 def test_every_child_table_cascades_and_has_rls_and_no_schema_qualification():
@@ -526,6 +526,8 @@ def test_hard_delete_removes_every_related_row_by_cascade(db):
                                           high="3", per_unit_expected="0.02")
             await pool.execute("INSERT INTO order_inputs (investigation_id, shipping_amount, fx_rate) "
                                "VALUES ($1, '12000', '90')", inv.id)
+            await repo.add_progress_event(pool, inv.id, stage="READING_LISTING", state="running",
+                                          message="test event", at=NOW)
         for table in migrations.TABLES:
             assert await _count(pool, table, target.id) == 1, table
 
