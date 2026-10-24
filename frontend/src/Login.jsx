@@ -133,7 +133,7 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
       }} onPointerLeave={() => { mouseX.set(0); mouseY.set(0); }}>
       <div className="login-wash" aria-hidden="true"><div className="login-blob blob-sage" /><div className="login-blob blob-gold" /></div>
       <div className="login-grain" aria-hidden="true" />
-      <a className="login-brand" href="#home" aria-label="Importsafe home"><img className="site-logo" src="/logo.png" alt="" width="40" height="40" />importsafe<span className="brand-dot">.</span></a>
+      <a className="login-brand" href="#analyze" aria-label="ImportSafe dashboard"><img className="site-logo" src="/logo.png" alt="" width="40" height="40" />importsafe</a>
       <motion.div className="flight-scene" style={{ x, y }} aria-hidden="true">
         {[0, 1].map(index => <div key={index} ref={node => { backgroundFlights.current[index] = node; }} className={`background-flight background-flight-${index}`}><Plane /></div>)}
         <svg className="flight-trail" viewBox="0 0 1000 700" preserveAspectRatio="none"><path d={trailPath} /></svg>
@@ -150,7 +150,7 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
         animate={{ opacity: status === 'success' ? 0 : 1, y: 0, scale: 1, x: status === 'error' && !reducedMotion ? [0, -10, 10, -6, 6, 0] : 0 }}
         transition={{ duration: .6, opacity: { duration: .6, delay: status === 'success' ? .8 : 0 } }}>
         <div className="card-kicker"><span /> {isSignup ? 'EVERY JOURNEY STARTS SOMEWHERE' : 'A LITTLE SPACE TO BEGIN AGAIN'}</div>
-        <h1 id="login-title">{isSignup ? 'A fresh start' : 'Welcome back'}<span>.</span></h1>
+        <h1 id="login-title">{isSignup ? 'A fresh start' : 'Welcome back'}</h1>
         <p className="login-subtitle">{isSignup ? 'A little curiosity. A world of possibilities.' : 'Settle in. Your next chapter starts here.'}</p>
         {isSignup && <div className="signup-welcome"><span className="signup-welcome-icon" aria-hidden="true">↗</span><div><strong>Your next chapter, thoughtfully imported.</strong><span>Bring your ideas. We’ll help you find your way.</span></div></div>}
         <form onSubmit={submit} onFocus={() => setFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
