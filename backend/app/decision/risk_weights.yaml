@@ -1,0 +1,20 @@
+# Risk score configuration. Keys under `weights` are CheckStatus values.
+# Validated by app/decision/risk_config.py; see docs/decisions.md section 3.
+weights:
+  contradiction_detected: 3
+  unverified: 2
+  potentially_applicable: 1
+  verified: 0
+  not_applicable: 0
+
+resale_bonus: 1
+quantity_threshold: 50
+quantity_bonus: 1
+needs_confirmation_bonus: 1
+contradiction_forces_high: true
+
+# Integer score ranges: contiguous, non-overlapping, high is open-ended (max: null).
+ranges:
+  low: {min: 0, max: 1}
+  medium: {min: 2, max: 4}
+  high: {min: 5, max: null}

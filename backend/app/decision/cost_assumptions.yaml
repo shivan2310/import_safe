@@ -1,0 +1,142 @@
+# Cost assumptions. EVERY VALUE HERE IS A PLACEHOLDER: nothing in this file is an official rate.
+# Each entry: value, source, as_of, verified, owner, max_age_days. verified: false and owner TBD until checked.
+# For placeholders, as_of is the date the placeholder was created, not the date of any official rate.
+# Approved rates reach the engine only through app/decision/rates/loader.py; this file is never written by code.
+# See docs/decisions.md sections 5, 5a and 7.
+
+version: "v0-placeholder"
+effective_date: "2026-10-24"
+
+fx_usd_inr:
+  value: 90
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 20
+
+landing_charge_pct:
+  value: 1
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 180
+
+bcd_pct:
+  value: 20
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+sws_pct_of_bcd:
+  value: 10
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+igst_pct:
+  value: 18
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+insurance_pct_of_goods:
+  value: 0
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+clearing_inr:
+  value: 3000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+port_cfs_inr:
+  value: 2000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+domestic_transport_inr:
+  value: 2000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+certification_inr:
+  value: 0
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+# Additional duties on their own bases (base: cif | assessable_value | bcd). Empty by default.
+# Entries may carry max_age_days; without it staleness is not checked.
+other_duties: []
+
+# Range settings (placeholders). bcd_low_pct / bcd_high_pct are absolute percentages.
+fx_variation_pct:
+  value: 5
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 180
+
+freight_variation_pct:
+  value: 20
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 180
+
+bcd_low_pct:
+  value: 10
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 180
+
+bcd_high_pct:
+  value: 30
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 180
+
+# Used only when freight is not supplied.
+default_freight_low_inr:
+  value: 5000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
+
+default_freight_high_inr:
+  value: 20000
+  source: "placeholder - not verified"
+  as_of: "2026-10-24"
+  verified: false
+  owner: TBD
+  max_age_days: 90
