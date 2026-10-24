@@ -1,4 +1,5 @@
 import ProfileMenu from './ProfileMenu';
+import { api, type FullReport, type InvStatus, type PendingQuestion } from './api';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import './InvestigationFlow.css';
@@ -7,8 +8,8 @@ export type ImportOrder = {
   url: string; quantity: string; state: string; city: string; purpose: string;
   variant: string; shipping: string; currency: string; shippingMode: string; certificates: string[];
 };
-type ProductFacts = { source: 'demo' | 'manual'; name: string; model: string; manufacturer: string; unitPrice: string; wireless: boolean; battery: boolean };
-const stages = [
+
+const UI_STAGES = [
   ['Read the listing', 'Collect the product details and seller information.'],
   ['Identify the product', 'Organise its model, intended use and technical features.'],
   ['Find requirements', 'Map the checks that need supporting evidence.'],
@@ -16,165 +17,468 @@ const stages = [
   ['Estimate landed cost', 'Build an editable estimate from your assumptions.'],
   ['Prepare your risk report', 'Bring open questions and next actions together.'],
 ];
-const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
-/** Local prototype adapter: no extraction, registry checks or duty lookup is simulated as fact. */
-export default function InvestigationFlow({ order, onBack, onLogout, historyControl }: { order: ImportOrder; onBack: () => void; onLogout: () => void; historyControl: ReactNode }) {
+const TERMINAL: Set<InvStatus> = new Set(['REPORT_READY', 'NEEDS_INPUT', 'FAILED', 'CANCELLED', 'EXPIRED', 'DELETED']);
+const POLL_MS = 2500;
+
+function statusToStage(status: InvStatus): number {
+  switch (status) {
+    case 'CREATED': case 'READING_LISTING': return 0;
+    case 'PROFILE_BUILT': case 'CLASSIFIED': return 1;
+    case 'CHECKING_REQUIREMENTS': return 2;
+    case 'VERIFYING_CLAIMS': return 3;
+    case 'ESTIMATING_COST': return 4;
+    default: return 5;
+  }
+}
+
+const money = (v: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v);
+
+export default function InvestigationFlow({ order, onBack, onLogout, historyControl }: {
+  order: ImportOrder; onBack: () => void; onLogout: () => void; historyControl: ReactNode
+}) {
   const reduced = useReducedMotion();
-  const isSample = order.url === 'https://www.alibaba.com/product-detail/100-bluetooth-speakers.html';
+  const [invId, setInvId] = useState<string | null>(null);
+  const [status, setStatus] = useState<InvStatus>('CREATED');
   const [stage, setStage] = useState(0);
-  const [phase, setPhase] = useState<'running' | 'manual' | 'report'>('running');
+  const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
+  const [report, setReport] = useState<FullReport | null>(null);
+  const [phase, setPhase] = useState<'starting' | 'running' | 'question' | 'report' | 'error'>('starting');
+  const [errorMsg, setErrorMsg] = useState('');
   const [elapsed, setElapsed] = useState(0);
-  const [facts, setFacts] = useState<ProductFacts>({ source: isSample ? 'demo' : 'manual', name: isSample ? 'Bluetooth speaker' : '', model: '', manufacturer: '', unitPrice: isSample ? '8' : '', wireless: isSample, battery: isSample });
-  const [generated, setGenerated] = useState('');
+  const [answerValue, setAnswerValue] = useState('');
   const title = useRef<HTMLHeadingElement>(null);
-  const manualTitle = useRef<HTMLHeadingElement>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     document.title = `${phase === 'report' ? 'Risk report' : 'Investigation'} — ImportSafe`;
-    if (phase === 'manual') { manualTitle.current?.scrollIntoView({ block: 'center' }); manualTitle.current?.focus({ preventScroll: true }); }
-    else { window.scrollTo({ top: 0, behavior: 'instant' }); title.current?.focus({ preventScroll: true }); }
-  }, [phase]);
-  useEffect(() => {
-    if (phase !== 'running') return;
-    const next = window.setTimeout(() => {
-      if (stage === 0 && !isSample && !facts.name) setPhase('manual');
-      else if (stage < stages.length - 1) setStage(s => s + 1);
-      else { setGenerated(new Date().toISOString()); setPhase('report'); }
-    }, 1500);
-    return () => clearTimeout(next);
-  }, [phase, stage, isSample, facts.name]);
-  useEffect(() => {
-    if (phase !== 'running') return;
-    const clock = window.setInterval(() => setElapsed(t => t + 1), 1000);
-    return () => clearInterval(clock);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    title.current?.focus({ preventScroll: true });
   }, [phase]);
 
+  // Create the investigation once on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function create() {
+      try {
+        const data = await api.createInvestigation({
+          url: order.url,
+          quantity: Number(order.quantity),
+          purpose: order.purpose || undefined,
+          variant: order.variant || undefined,
+          destination: (order.state || order.city) ? { state: order.state || undefined, city: order.city || undefined } : undefined,
+          shipping: order.shipping ? { amount: order.shipping, currency: order.currency, mode: order.shippingMode || undefined } : undefined,
+          sellerCertificates: order.certificates.length ? order.certificates : undefined,
+        });
+        if (!cancelled) { setInvId(data.id); setPhase('running'); }
+      } catch (err) {
+        if (!cancelled) { setErrorMsg((err as Error).message || 'Could not start investigation.'); setPhase('error'); }
+      }
+    }
+    void create();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Elapsed clock
+  useEffect(() => {
+    if (phase !== 'running' && phase !== 'question') return;
+    const id = window.setInterval(() => setElapsed(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  // Poll for status while running
+  useEffect(() => {
+    if (phase !== 'running' || !invId) return;
+    let cancelled = false;
+    async function poll() {
+      try {
+        const data = await api.getInvestigation(invId!);
+        if (cancelled) return;
+        setStatus(data.status);
+        setStage(statusToStage(data.status));
+        if (data.status === 'NEEDS_INPUT' && data.pendingQuestion) {
+          setPendingQuestion(data.pendingQuestion);
+          setPhase('question');
+        } else if (data.status === 'REPORT_READY') {
+          const rep = await api.getReport(invId!);
+          if (!cancelled) { setReport(rep); setPhase('report'); }
+        } else if (data.status === 'FAILED') {
+          setErrorMsg('The investigation could not be completed. Please try again.');
+          setPhase('error');
+        } else if (TERMINAL.has(data.status)) {
+          setErrorMsg(`Investigation ended with status: ${data.status}`);
+          setPhase('error');
+        } else {
+          pollRef.current = window.setTimeout(poll, POLL_MS);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setErrorMsg((err as Error).message || 'Lost connection to the server.');
+          setPhase('error');
+        }
+      }
+    }
+    void poll();
+    return () => { cancelled = true; if (pollRef.current) clearTimeout(pollRef.current); };
+  }, [phase, invId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function submitAnswer(skipped: boolean) {
+    if (!invId || !pendingQuestion) return;
+    try {
+      await api.postAnswer(invId, skipped ? { questionId: pendingQuestion.id, skipped: true } : { questionId: pendingQuestion.id, value: answerValue });
+      setAnswerValue(''); setPendingQuestion(null); setPhase('running');
+    } catch (err) {
+      setErrorMsg((err as Error).message || 'Could not submit answer.');
+    }
+  }
+
+  async function handleDelete() {
+    if (invId) { try { await api.deleteInvestigation(invId); } catch { /* best effort */ } }
+    onBack();
+  }
+
+  const progressPct = stage / (UI_STAGES.length - 1);
+
   return <div className="investigation-page research-page">
-    <header className="workspace-header"><div className="workspace-header-start">{historyControl}<a className="workspace-brand" href="#analyze" onClick={onBack}><img className="site-logo" src="/logo.png" alt="" width="40" height="40" /> importsafe</a></div><nav aria-label="Workspace">{phase === 'report' && <button className="new-investigation-button" onClick={onBack}>New investigation</button>}<ProfileMenu onLogout={onLogout} /></nav></header>
+    <header className="workspace-header">
+      <div className="workspace-header-start">
+        {historyControl}
+        <a className="workspace-brand" href="#analyze" onClick={onBack}>
+          <img className="site-logo" src="/logo.png" alt="" width="40" height="40" /> importsafe
+        </a>
+      </div>
+      <nav aria-label="Workspace">
+        {phase === 'report' && <button className="new-investigation-button" onClick={onBack}>New investigation</button>}
+        <ProfileMenu onLogout={onLogout} />
+      </nav>
+    </header>
+
     <main className="research-main">
-      <div className="research-breadcrumb"><span>Workspace</span><span>/</span><span>{phase === 'report' ? 'Your report' : 'Investigation'}</span></div>
-      {phase === 'report' ? <RiskReport order={order} facts={facts} generated={generated} onDelete={onBack} titleRef={title} /> : <>
-        <div className="research-heading"><div className="workspace-eyebrow">FROM A FIND TO A CLEARER PLAN</div><h1 ref={title} tabIndex={-1}>A little research<br /><em>A clearer direction</em></h1><p>Your import details, one thoughtful step at a time.</p></div>
-        <div className="research-progress-layout">
-          <section className="research-panel stage-panel" aria-labelledby="progress-title"><div className="research-panel-top"><h2 id="progress-title">Your investigation</h2><span className="research-tag">{phase === 'manual' ? 'Needs your input' : 'In progress'}</span></div>
-            <div className="research-progress-copy"><span>STEP {stage + 1} OF 6</span><span>{Math.round(stage / 6 * 100)}%</span></div><div className="research-progress-track" role="progressbar" aria-label="Investigation progress" aria-valuenow={stage} aria-valuemin={0} aria-valuemax={6}><motion.span initial={{ scaleX: 0 }} style={{ transformOrigin: 'left' }} animate={{ scaleX: stage / 6 }} transition={{ duration: reduced ? 0 : .5 }} /></div>
-            <ol className="research-stages">{stages.map(([name, description], i) => <li key={name} className={i < stage ? 'complete' : i === stage ? 'current' : ''} aria-current={i === stage ? 'step' : undefined}><span className="research-stage-number">{i < stage ? '✓' : String(i + 1).padStart(2, '0')}</span><div><h3>{name}</h3><p>{description}</p>{i === stage && <span className="research-stage-state">{phase === 'manual' ? 'Waiting for your details' : 'Preparing demo preview…'}</span>}</div></li>)}</ol>
-            <div className="research-progress-footer"><span>Elapsed {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span><button className="research-text-button" onClick={onBack}>Cancel investigation</button></div>
-          </section>
-          <aside className="research-side"><div className="research-orbit" aria-hidden="true"><span>↗</span><span className="orbit-label">CONNECTING THE DOTS</span></div><h2>Good decisions<br />start with good questions</h2><p>We’ll keep the unknowns visible, so you know what to ask before you order.</p><div className="research-live" role="status"><span className="research-live-dot" />{phase === 'manual' ? 'The listing needs your help.' : `${stages[stage][0]} · demo workflow`}</div><div className="research-side-order"><span>YOUR IMPORT</span><strong>{order.quantity} units → {order.city}</strong><a href={order.url} target="_blank" rel="noreferrer">View product listing ↗</a></div><p className="research-fineprint">Prototype mode. TinyFish, official-record checks and live duty data are not connected. These stages demonstrate the intended workflow.</p></aside>
+      <div className="research-breadcrumb">
+        <span>Workspace</span><span>/</span>
+        <span>{phase === 'report' ? 'Your report' : 'Investigation'}</span>
+      </div>
+
+      {phase === 'error' && (
+        <div className="research-panel" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+          <h2>Something went wrong</h2>
+          <p style={{ marginBottom: '1.5rem' }}>{errorMsg}</p>
+          <button className="research-primary" onClick={onBack}>Back to form</button>
         </div>
-        {phase === 'manual' && <section className="research-panel manual-panel"><div><span className="research-section-kicker">A QUICK HANDOFF</span><h2 ref={manualTitle} tabIndex={-1}>Tell us what’s on the listing</h2><p>Live listing access is unavailable in this prototype. Enter the product details to continue with a report of the open checks.</p></div><form onSubmit={event => { event.preventDefault(); setStage(1); setPhase('running'); }}><div className="research-input-grid"><label>Product name *<input required pattern=".*\S.*" value={facts.name} onChange={e => setFacts({ ...facts, name: e.target.value })} /></label><label>Unit price (USD, optional)<input type="number" min="0" step="0.01" value={facts.unitPrice} onChange={e => setFacts({ ...facts, unitPrice: e.target.value })} /></label><label>Model number<input value={facts.model} onChange={e => setFacts({ ...facts, model: e.target.value })} /></label><label>Manufacturer<input value={facts.manufacturer} onChange={e => setFacts({ ...facts, manufacturer: e.target.value })} /></label></div><div className="research-checkboxes"><label><input type="checkbox" checked={facts.wireless} onChange={e => setFacts({ ...facts, wireless: e.target.checked })} /> Listing mentions wireless connectivity</label><label><input type="checkbox" checked={facts.battery} onChange={e => setFacts({ ...facts, battery: e.target.checked })} /> Listing mentions a battery</label></div><button className="research-primary">Continue to demo report ↗</button></form></section>}
+      )}
+
+      {phase === 'report' && report && (
+        <LiveReport order={order} report={report} onDelete={handleDelete} titleRef={title} invId={invId!} />
+      )}
+
+      {(phase === 'starting' || phase === 'running' || phase === 'question') && <>
+        <div className="research-heading">
+          <div className="workspace-eyebrow">FROM A FIND TO A CLEARER PLAN</div>
+          <h1 ref={title} tabIndex={-1}>A little research<br /><em>A clearer direction</em></h1>
+          <p>Your import details, one thoughtful step at a time.</p>
+        </div>
+        <div className="research-progress-layout">
+          <section className="research-panel stage-panel" aria-labelledby="progress-title">
+            <div className="research-panel-top">
+              <h2 id="progress-title">Your investigation</h2>
+              <span className="research-tag">{phase === 'question' ? 'Needs your input' : phase === 'starting' ? 'Starting…' : 'In progress'}</span>
+            </div>
+            <div className="research-progress-copy">
+              <span>STEP {stage + 1} OF {UI_STAGES.length}</span>
+              <span>{Math.round(progressPct * 100)}%</span>
+            </div>
+            <div className="research-progress-track" role="progressbar" aria-label="Investigation progress" aria-valuenow={stage} aria-valuemin={0} aria-valuemax={UI_STAGES.length}>
+              <motion.span initial={{ scaleX: 0 }} style={{ transformOrigin: 'left' }} animate={{ scaleX: progressPct }} transition={{ duration: reduced ? 0 : .5 }} />
+            </div>
+            <ol className="research-stages">
+              {UI_STAGES.map(([name, description], i) => (
+                <li key={name} className={i < stage ? 'complete' : i === stage ? 'current' : ''} aria-current={i === stage ? 'step' : undefined}>
+                  <span className="research-stage-number">{i < stage ? '✓' : String(i + 1).padStart(2, '0')}</span>
+                  <div>
+                    <h3>{name}</h3><p>{description}</p>
+                    {i === stage && <span className="research-stage-state">{phase === 'question' ? 'Waiting for your answer' : 'Connecting to backend…'}</span>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="research-progress-footer">
+              <span>Elapsed {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>
+              <button className="research-text-button" onClick={handleDelete}>Cancel investigation</button>
+            </div>
+          </section>
+
+          <aside className="research-side">
+            <div className="research-orbit" aria-hidden="true"><span>↗</span><span className="orbit-label">CONNECTING THE DOTS</span></div>
+            <h2>Good decisions<br />start with good questions</h2>
+            <p>We'll keep the unknowns visible, so you know what to ask before you order.</p>
+            <div className="research-live" role="status">
+              <span className="research-live-dot" />
+              {phase === 'question' ? 'Your answer is needed to continue.' : phase === 'starting' ? 'Starting investigation…' : `${UI_STAGES[stage][0]} · live`}
+            </div>
+            <div className="research-side-order">
+              <span>YOUR IMPORT</span>
+              <strong>{order.quantity} units → {order.city}</strong>
+              <a href={order.url} target="_blank" rel="noreferrer">View product listing ↗</a>
+            </div>
+          </aside>
+        </div>
+
+        {phase === 'question' && pendingQuestion && (
+          <section className="research-panel manual-panel">
+            <div>
+              <span className="research-section-kicker">A QUICK HANDOFF</span>
+              <h2 tabIndex={-1}>{pendingQuestion.prompt}</h2>
+              {pendingQuestion.whyItMatters && <p>{pendingQuestion.whyItMatters}</p>}
+            </div>
+            <form onSubmit={e => { e.preventDefault(); void submitAnswer(false); }}>
+              <div className="research-input-grid">
+                <label>
+                  Your answer *
+                  <input required value={answerValue} onChange={e => setAnswerValue(e.target.value)} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                <button className="research-primary" type="submit">Continue ↗</button>
+                <button className="research-text-button" type="button" onClick={() => void submitAnswer(true)}>Skip this question</button>
+              </div>
+            </form>
+          </section>
+        )}
       </>}
     </main>
   </div>;
 }
 
-function RiskReport({ order, facts, generated, onDelete, titleRef }: { order: ImportOrder; facts: ProductFacts; generated: string; onDelete: () => void; titleRef: React.RefObject<HTMLHeadingElement | null> }) {
+// ---------------------------------------------------------------------------
+// Live report component — renders real backend data
+// ---------------------------------------------------------------------------
+
+const OUTCOME_LABEL: Record<string, string> = {
+  proceed: 'Ready to proceed',
+  proceed_with_caution: 'Proceed with caution',
+  needs_review: 'Needs review',
+  do_not_proceed: 'Do not proceed',
+  insufficient_information: 'More information needed',
+};
+
+const RISK_LABEL: Record<string, string> = {
+  low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical', unassessed: 'Unassessed',
+};
+
+const CHECK_STATUS_LABEL: Record<string, string> = {
+  clear: 'Clear', flagged: 'Flagged', needs_details: 'Needs details',
+  not_applicable: 'Not applicable', unassessed: 'Unassessed',
+};
+
+function LiveReport({ order, report, onDelete, titleRef, invId }: {
+  order: ImportOrder; report: FullReport; onDelete: () => void;
+  titleRef: React.RefObject<HTMLHeadingElement | null>; invId: string;
+}) {
   const reduced = useReducedMotion();
-  const [activeEvidence, setActiveEvidence] = useState<number | null>(null);
-  const [productImage, setProductImage] = useState('');
-  const [imageStatus, setImageStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
-  useEffect(() => {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 130000);
-    setProductImage('');
-    setImageStatus('loading');
-    async function loadImage() {
-      try {
-        // Only accept a photo retrieved from this listing, never a demo fallback.
-        if (facts.source === 'demo') { setImageStatus('unavailable'); return; }
-        const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-        const response = await fetch(`${base}/api/v1/analyze`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: order.url, mode: 'live' }), signal: controller.signal,
-        });
-        if (!response.ok) throw new Error('Listing unavailable');
-        const result = await response.json();
-        if (result.retrieval_mode !== 'live' || typeof result.product?.image !== 'string' || !result.product.image.trim()) throw new Error('No listing photo');
-        const image = new URL(result.product.image, order.url);
-        if (!['https:', 'http:'].includes(image.protocol)) throw new Error('Invalid image');
-        if (!controller.signal.aborted) { setProductImage(image.href); setImageStatus('ready'); }
-      } catch {
-        if (!controller.signal.aborted) setImageStatus('unavailable');
-      } finally { window.clearTimeout(timeout); }
-    }
-    controller.signal.addEventListener('abort', () => setImageStatus('unavailable'), { once: true });
-    void loadImage();
-    return () => { controller.abort(); window.clearTimeout(timeout); };
-  }, [order.url, facts.source]);
   const [done, setDone] = useState<number[]>([]);
   const [notice, setNotice] = useState('');
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const deleteDialog = useRef<HTMLDialogElement>(null);
+
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
-  function showNotice(message: string) {
+  useEffect(() => { if (deleteOpen) deleteDialog.current?.showModal(); }, [deleteOpen]);
+
+  function showNotice(msg: string) {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    setNotice(message);
+    setNotice(msg);
     noticeTimer.current = setTimeout(() => setNotice(''), 4000);
   }
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [cost, setCost] = useState({ price: facts.unitPrice, freight: order.shipping, fx: '84', duty: '10', surcharge: '10', tax: '18', fees: '1500' });
-  const evidenceDialog = useRef<HTMLDialogElement>(null);
-  const deleteDialog = useRef<HTMLDialogElement>(null);
-  const evidence = [
-    { title: 'Your import details', kind: 'User supplied', url: order.url, excerpt: `${order.quantity} units; ${order.city}, ${order.state}; ${order.purpose}; variant: ${order.variant || 'not provided'}.`, time: generated, note: 'Captured from this form. The linked listing has not been fetched.' },
-    { title: 'Product details', kind: facts.source === 'manual' ? 'User supplied' : 'Demo fixture', url: order.url, excerpt: `${facts.name}; model: ${facts.model || 'unknown'}; manufacturer: ${facts.manufacturer || 'unknown'}. Wireless and battery indicators are unverified.`, time: generated, note: 'No seller page or official record has been retrieved.' },
-    { title: 'Seller certificate numbers', kind: 'User supplied', url: '', excerpt: order.certificates.join(', ') || 'No certificate numbers provided.', time: generated, note: 'A certificate number alone does not establish validity or product coverage.' },
-    { title: 'Cost assumptions', kind: 'Illustrative inputs', url: '', excerpt: `Unit price: USD ${cost.price || 'not supplied'}; freight: ${order.currency} ${cost.freight || '0'}; INR/USD: ${cost.fx}; duty: ${cost.duty}%; surcharge on duty: ${cost.surcharge}%; tax: ${cost.tax}%; other fees: INR ${cost.fees}. Sample calculator inputs, not a tariff determination.`, time: generated, note: 'No exchange-rate or tariff service was queried.' },
+
+  const allFacts = [
+    ...report.profile.confirmed.map(f => ({ ...f, section: 'Confirmed' })),
+    ...report.profile.sellerClaims.map(f => ({ ...f, section: 'Seller claims' })),
+    ...report.profile.userSupplied.map(f => ({ ...f, section: 'Your input' })),
   ];
-  useEffect(() => { if (activeEvidence !== null) evidenceDialog.current?.showModal(); }, [activeEvidence]);
-  useEffect(() => { if (deleteOpen) deleteDialog.current?.showModal(); }, [deleteOpen]);
-  // Explicit illustrative calculation: surcharge is a percentage of duty;
-  // tax uses assessable value + duty + surcharge. Not a customs assessment.
-  const n = (v: string) => Math.max(0, Number(v) || 0);
-  const shippingFx: Record<string, number> = { USD: n(cost.fx), INR: 1, CNY: n(cost.fx) / 7.2, EUR: n(cost.fx) * 1.1 };
-  const goods = n(cost.price) * Number(order.quantity) * n(cost.fx);
-  const freight = n(cost.freight) * shippingFx[order.currency];
-  const assessable = goods + freight;
-  const duty = assessable * n(cost.duty) / 100;
-  const surcharge = duty * n(cost.surcharge) / 100;
-  const tax = (assessable + duty + surcharge) * n(cost.tax) / 100;
-  const total = assessable + duty + surcharge + tax + n(cost.fees);
-  const priced = cost.price !== '' && n(cost.fx) > 0;
-  const tasks = ['Ask the seller for the exact model, manufacturer and technical datasheet.', 'Request the relevant certificate, registration scope and matching model list.', 'Verify applicable requirements with the relevant authority or a qualified broker.', 'Get a written freight quote and confirm the import cost assumptions.'];
-  const sellerMessage = `Hello, I’m considering ${order.quantity} units of ${facts.name} for delivery to ${order.city}, ${order.state}, India. Please share the exact model and manufacturer, technical datasheet, applicable certificates and registration numbers with the covered model list, ${facts.wireless ? 'wireless specifications and any approval documents, ' : ''}${facts.battery ? 'battery chemistry, capacity and available transport test documents, ' : ''}country of origin, packaging/label photos, unit price, and a shipping quote with currency, mode and Incoterms. Please ensure all documents match the offered product. Thank you.`;
-  async function copySeller() { try { await navigator.clipboard.writeText(sellerMessage); showNotice('Copied to clipboard'); } catch { showNotice('Copy is unavailable. Select the request and copy it manually.'); } }
-  function exportReport() {
-    const report = { mode: 'DEMO', generated, outcome: 'Insufficient information', overallRisk: 'Unassessed', order, product: facts, evidence, requirements: checks, cost: { assumptions: cost, currency: 'INR', estimate: priced ? total : null, illustrative: true }, actions: tasks.map((text, i) => ({ text, completed: done.includes(i) })), sellerMessage };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = `importsafe-report-${generated.slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); showNotice('Report exported as JSON.');
+
+  const productName = allFacts.find(f => f.field === 'name' || f.field === 'product_name')?.value as string | undefined;
+  const quantity = report.summary.quantity ?? Number(order.quantity);
+
+  async function exportReport() {
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `importsafe-report-${report.id}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showNotice('Report exported as JSON.');
   }
-  const checks = [
-    { title: 'Import policy & classification', detail: 'Confirm the exact product and classification before determining import policy.', status: 'Needs verification', source: 'https://www.dgft.gov.in/', rule: 'Not retrieved' },
-    { title: 'BIS applicability', detail: 'Determine whether this exact product and model falls within an applicable standard or order.', status: 'Unassessed', source: 'https://www.bis.gov.in/', rule: 'Not retrieved' },
-    { title: 'Wireless approval', detail: facts.wireless ? 'Wireless connectivity indicated. Frequency, power and approval documentation need review.' : 'Wireless capability has not been confirmed; establish specifications first.', status: 'Needs details', source: 'https://dot.gov.in/', rule: 'Not retrieved' },
-    { title: 'Battery & transport', detail: facts.battery ? 'Battery indicated. Confirm chemistry, capacity and shipment documentation.' : 'Battery presence is unknown; ask the seller before selecting transport.', status: 'Needs details', source: '', rule: 'Not retrieved' },
-    { title: 'Labelling & category checks', detail: 'Confirm intended use, packaging, labels and any category-specific obligations.', status: 'Unassessed', source: '', rule: 'Not retrieved' },
+
+  const actions = report.nextActions.length ? report.nextActions : [
+    { priority: 1, text: 'Ask the seller for the exact model, manufacturer and technical datasheet.' },
+    { priority: 2, text: 'Request the relevant certificate, registration scope and matching model list.' },
+    { priority: 3, text: 'Verify applicable requirements with the relevant authority or a qualified broker.' },
+    { priority: 4, text: 'Get a written freight quote and confirm the import cost assumptions.' },
   ];
-  const chip = (i: number, text: string) => <button className="evidence-chip" onClick={() => setActiveEvidence(i)}>{text} ↗</button>;
+
+  const outcomeKey = report.outcome.toLowerCase();
+  const riskKey = report.riskLevel.toLowerCase();
+
   return <>
-    <div className="report-heading"><div><div className="workspace-eyebrow">YOUR IMPORT, IN PERSPECTIVE</div><h1 ref={titleRef} tabIndex={-1}>The bigger picture</h1><p>{facts.name} <span>·</span> {order.quantity} units <span>·</span> {order.city}, {order.state}</p></div><div className="report-tools"><button onClick={exportReport}>Export JSON</button><button onClick={() => window.print()}>Print PDF</button></div></div>
-    <div className="report-demo-note"><strong>Demo report</strong><span>Based on your inputs and illustrative data. No live listing, certificate or regulatory research has run.</span></div>
-    <section className="report-outcome"><span className="outcome-symbol" aria-hidden="true">?</span><div><div className="research-section-kicker">OUTCOME · MORE EVIDENCE NEEDED</div><h2>Insufficient information</h2><p>Get the exact product documents and verify the applicable requirements before committing to an order.</p></div><div className="outcome-risk"><span>OVERALL RISK</span><strong>Unassessed</strong><small>Evidence is incomplete</small></div></section>
-    <nav className="report-section-nav" aria-label="Report sections"><a href="#report-summary" onClick={e => { e.preventDefault(); document.getElementById('report-summary')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }}>Overview</a><a href="#report-requirements" onClick={e => { e.preventDefault(); document.getElementById('report-requirements')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }}>Requirements</a><a href="#report-suppliers" onClick={e => { e.preventDefault(); document.getElementById('report-suppliers')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }}>Buying alternatives</a><a href="#report-cost" onClick={e => { e.preventDefault(); document.getElementById('report-cost')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }}>Landed cost</a><a href="#report-next" onClick={e => { e.preventDefault(); document.getElementById('report-next')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }}>Next steps</a></nav>
+    <div className="report-heading">
+      <div>
+        <div className="workspace-eyebrow">YOUR IMPORT, IN PERSPECTIVE</div>
+        <h1 ref={titleRef} tabIndex={-1}>The bigger picture</h1>
+        <p>{productName ?? 'Your product'} <span>·</span> {quantity} units <span>·</span> {order.city}{order.state ? `, ${order.state}` : ''}</p>
+      </div>
+      <div className="report-tools">
+        <button onClick={exportReport}>Export JSON</button>
+        <button onClick={() => window.print()}>Print PDF</button>
+      </div>
+    </div>
+
+    <section className="report-outcome">
+      <span className="outcome-symbol" aria-hidden="true">{outcomeKey === 'proceed' ? '✓' : outcomeKey === 'do_not_proceed' ? '✗' : '!'}</span>
+      <div>
+        <div className="research-section-kicker">OUTCOME · {(OUTCOME_LABEL[outcomeKey] ?? report.outcome).toUpperCase()}</div>
+        <h2>{OUTCOME_LABEL[outcomeKey] ?? report.outcome}</h2>
+        {report.reasons.length > 0 && <p>{report.reasons[0]}</p>}
+      </div>
+      <div className="outcome-risk">
+        <span>OVERALL RISK</span>
+        <strong>{RISK_LABEL[riskKey] ?? report.riskLevel}</strong>
+        <small>Score: {report.score}</small>
+      </div>
+    </section>
+
+    <nav className="report-section-nav" aria-label="Report sections">
+      {['#report-summary', '#report-requirements', '#report-profile', '#report-cost', '#report-next'].map((href, i) => (
+        <a key={href} href={href} onClick={e => { e.preventDefault(); document.getElementById(href.slice(1))?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth' }); }}>
+          {['Overview', 'Requirements', 'Profile', 'Landed cost', 'Next steps'][i]}
+        </a>
+      ))}
+    </nav>
+
     <div className="report-grid">
-      <section className="research-panel report-summary" id="report-summary"><div className="research-panel-top"><h2>01 <span>Order at a glance</span></h2>{chip(0, 'Your inputs')}</div><dl className="report-facts">{[['Quantity', `${order.quantity} units`], ['Destination', `${order.city}, ${order.state}`], ['Purpose', order.purpose === 'resale' ? 'Business / resale' : 'Personal use'], ['Classification', 'Not determined'], ['BIS applicability', 'Not assessed'], ['Wireless approval', 'Not verified'], ['Seller BIS claim', 'Not independently retrieved'], ['Model / manufacturer match', 'Not established'], ['Illustrative cost / unit', priced ? money(total / Number(order.quantity)) : 'Add a unit price']].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
-      <section className="research-panel report-profile"><div className="research-panel-top"><h2>02 <span>Product profile</span></h2></div><div className="profile-group"><span className="profile-category">CONFIRMED</span><p>No product facts independently confirmed yet.</p></div><div className="profile-group"><span className="profile-category">SELLER CLAIMS</span><p>Seller claims have not been retrieved or validated.</p>{chip(2, 'Certificate inputs')}</div><div className="profile-group"><span className="profile-category">{facts.source === 'manual' ? 'USER SUPPLIED' : 'DEMO / USER INPUTS'}</span><p><strong>{facts.name}</strong><br />Variant: {order.variant || 'Not supplied'}<br />Model: {facts.model || 'Not supplied'}<br />Manufacturer: {facts.manufacturer || 'Not supplied'}</p></div></section>
+      <section className="research-panel report-summary" id="report-summary">
+        <div className="research-panel-top"><h2>01 <span>Order at a glance</span></h2></div>
+        <dl className="report-facts">
+          {[
+            ['Quantity', `${quantity} units`],
+            ['Destination', [order.city, order.state].filter(Boolean).join(', ') || 'Not specified'],
+            ['Purpose', order.purpose === 'resale' ? 'Business / resale' : 'Personal use'],
+            ['Classification', report.summary.classification?.value ?? 'Not determined'],
+            ['BIS', report.summary.bis ? CHECK_STATUS_LABEL[report.summary.bis] ?? report.summary.bis : 'Not assessed'],
+            ['Wireless approval', report.summary.wireless ? CHECK_STATUS_LABEL[report.summary.wireless] ?? report.summary.wireless : 'Not assessed'],
+            ['Identity match', report.summary.identityMatch ?? 'Not established'],
+            ['Illustrative cost / unit', report.summary.illustrativeCostPerUnit
+              ? `${report.summary.illustrativeCostPerUnit.currency} ${report.summary.illustrativeCostPerUnit.expected}`
+              : report.cost ? money(Number(report.cost.perUnitExpected)) : '—'],
+          ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+        </dl>
+      </section>
+
+      <section className="research-panel report-profile" id="report-profile">
+        <div className="research-panel-top"><h2>02 <span>Product profile</span></h2></div>
+        {['Confirmed', 'Seller claims', 'Your input'].map(section => {
+          const facts = allFacts.filter(f => f.section === section);
+          return <div key={section} className="profile-group">
+            <span className="profile-category">{section.toUpperCase()}</span>
+            {facts.length === 0
+              ? <p>No {section.toLowerCase()} facts available.</p>
+              : <dl style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.5rem .75rem', margin: 0 }}>
+                  {facts.map(f => <div key={f.field}><dt style={{ fontSize: '.75rem', opacity: .6 }}>{f.field.replace(/_/g, ' ')}</dt><dd style={{ margin: 0 }}>{String(f.value)}</dd></div>)}
+                </dl>}
+          </div>;
+        })}
+      </section>
     </div>
-    <div className="report-sourcing-grid">
-    <section className="research-panel requirements-panel" id="report-requirements"><div className="research-panel-top"><h2>03 <span>The requirement checks</span></h2><span className="research-tag">0 verified · 5 open</span></div><p className="research-section-intro">A research checklist for this product. Every open check needs a current source and a product match.</p><div className="requirements-table"><div className="requirements-table-head"><span>REQUIREMENT</span><span>STATUS & REASONING</span><span>SOURCE / RULE VERSION</span></div>{checks.map(check => <div className="requirement-row" key={check.title}><h3>{check.title}</h3><div><span className="requirement-status">{check.status}</span><p>{check.detail}</p></div><div>{check.source ? <a href={check.source} target="_blank" rel="noreferrer">Authority website ↗</a> : <span>Source needed</span>}<small>Rule version: {check.rule}</small><small>No supporting source retrieved</small></div></div>)}</div></section>
-    <section className="research-panel supplier-panel" id="report-suppliers"><div className="research-panel-top"><h2>04 <span>This product on other platforms</span></h2><span className="research-tag">Product links</span></div><p className="research-section-intro">Find <strong>{facts.name || 'your product'}</strong> across alternative shopping platforms.</p><div className="supplier-options product-platform-links">{[
-      { name: 'Amazon India', host: 'amazon.in', url: `https://www.amazon.in/s?k=${encodeURIComponent([facts.name, facts.model].filter(Boolean).join(' ') || 'products')}` },
-      { name: 'Flipkart', host: 'flipkart.com', url: `https://www.flipkart.com/search?q=${encodeURIComponent([facts.name, facts.model].filter(Boolean).join(' ') || 'products')}` },
-      { name: 'Alibaba', host: 'alibaba.com', url: `https://www.alibaba.com/trade/search?SearchText=${encodeURIComponent([facts.name, facts.model].filter(Boolean).join(' ') || 'products')}` },
-      { name: 'Made-in-China', host: 'made-in-china.com', url: `https://www.made-in-china.com/products-search/hot-china-products/${encodeURIComponent(([facts.name, facts.model].filter(Boolean).join(' ') || 'products').trim().replace(/\s+/g, '_'))}.html` },
-    ].filter(site => { try { const host = new URL(order.url).hostname; return host !== site.host && !host.endsWith(`.${site.host}`); } catch { return true; } }).map(site => <a key={site.name} href={site.url} target="_blank" rel="noopener noreferrer"><div className="product-platform-heading"><strong>{site.name}</strong><span aria-hidden="true">↗</span></div><p>{facts.name || 'Your product'}{facts.model && <small>Model: {facts.model}</small>}</p><span className="product-platform-domain">{site.host} · View product search</span><span className="supplier-new-tab">Opens in a new tab</span></a>)}</div><p className="research-fineprint">Links search for this product and model. Exact matching listings, availability and prices have not been verified.</p><figure className="alternate-product-image" aria-busy={imageStatus === 'loading'}>{productImage ? <img src={productImage} alt={`${facts.name || 'Requested product'}${facts.model ? ` — ${facts.model}` : ''}`} referrerPolicy="no-referrer" onError={() => { setProductImage(''); setImageStatus('unavailable'); }} /> : <div className="product-photo-empty"><svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="9" y="13" width="46" height="38" rx="6" stroke="currentColor" strokeWidth="2"/><circle cx="23" cy="26" r="5" stroke="currentColor" strokeWidth="2"/><path d="m12 46 14-12 9 7 9-13 11 18" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/></svg><strong>{imageStatus === 'loading' ? 'Finding the product photo…' : 'Product photo unavailable'}</strong><span>{imageStatus === 'loading' ? 'Reading the original product listing' : facts.source === 'demo' ? 'This demo listing does not include a product photo' : 'The listing photo could not be retrieved'}</span></div>}<figcaption><div><strong>{facts.name || 'Your product'}</strong>{facts.model && <small>{facts.model}</small>}</div>{productImage && <a href={order.url} target="_blank" rel="noopener noreferrer">Original listing ↗</a>}</figcaption></figure></section>
+
+    <section className="research-panel requirements-panel" id="report-requirements">
+      <div className="research-panel-top">
+        <h2>03 <span>The requirement checks</span></h2>
+        <span className="research-tag">{report.checks.filter(c => c.status === 'clear').length} clear · {report.checks.filter(c => c.status !== 'clear').length} open</span>
+      </div>
+      <p className="research-section-intro">Compliance checks identified for this product.</p>
+      <div className="requirements-table">
+        <div className="requirements-table-head"><span>REQUIREMENT</span><span>STATUS & REASONING</span><span>RULE VERSION</span></div>
+        {report.checks.map(check => (
+          <div className="requirement-row" key={check.ruleId}>
+            <h3>{check.area}{check.mandatory && <span style={{ fontSize: '.7rem', marginLeft: '.5rem', opacity: .6 }}>MANDATORY</span>}</h3>
+            <div>
+              <span className="requirement-status">{CHECK_STATUS_LABEL[check.status] ?? check.status}</span>
+              <p>{check.reasoning}</p>
+            </div>
+            <div><small>Rule: {check.ruleVersion}</small></div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    {report.cost && (
+      <section className="research-panel landed-panel" id="report-cost">
+        <div className="research-panel-top"><h2>04 <span>A clearer view of the cost</span></h2></div>
+        <p className="research-section-intro">Illustrative landed cost estimate in {report.cost.currency}.</p>
+        <div className="cost-ranges">
+          {[
+            ['Low scenario', Number(report.cost.low), '−10% sensitivity'],
+            ['Expected scenario', Number(report.cost.expected), 'Your current assumptions'],
+            ['High scenario', Number(report.cost.high), '+15% sensitivity'],
+          ].map(([label, value, note], i) => (
+            <div key={String(label)} className={i === 1 ? 'cost-expected' : ''}>
+              <span>{label}</span>
+              <strong>{money(Number(value))}</strong>
+              <small>{String(note)}</small>
+            </div>
+          ))}
+        </div>
+        <div className="cost-layout">
+          <div className="cost-breakdown">
+            <h3>Where the estimate comes from</h3>
+            {report.cost.breakdown.map(line => (
+              <div key={line.label}><span>{line.label}</span><strong>{money(Number(line.amount))}</strong></div>
+            ))}
+            <div className="cost-total">
+              <span>Expected total<small>{money(Number(report.cost.perUnitExpected))} per unit</small></span>
+              <strong>{money(Number(report.cost.expected))}</strong>
+            </div>
+          </div>
+        </div>
+        <p className="research-fineprint">{report.cost.breakdownNote}</p>
+      </section>
+    )}
+
+    <section className="research-panel next-panel" id="report-next">
+      <div className="research-panel-top">
+        <h2>05 <span>Your next thoughtful steps</span></h2>
+        <span className="research-tag">{done.length} / {actions.length} done</span>
+      </div>
+      <div className="next-layout">
+        <div className="action-checklist">
+          {actions.sort((a, b) => a.priority - b.priority).map((action, i) => (
+            <label key={action.text} className={done.includes(i) ? 'action-complete' : ''}>
+              <input type="checkbox" checked={done.includes(i)}
+                onChange={e => setDone(cur => e.target.checked ? [...cur, i] : cur.filter(n => n !== i))} />
+              <span><small>PRIORITY {action.priority}</small>{action.text}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <div className="report-bottom">
+      <button className="delete-report" onClick={() => setDeleteOpen(true)}>Delete this report</button>
     </div>
-    <section className="research-panel certificate-panel"><div className="research-panel-top"><h2>05 <span>Do the documents match?</span></h2></div><p className="research-section-intro">Compare the offered product with the scope of the official registration.</p><div className="certificate-comparison"><div><span className="research-section-kicker">SELLER / USER INPUT</span><h3>{order.certificates.length ? order.certificates.join(', ') : 'No certificate supplied'}</h3><p>Model: {facts.model || 'Unknown'}<br />Manufacturer: {facts.manufacturer || 'Unknown'}</p></div><span className="comparison-symbol" aria-hidden="true">⇄</span><div><span className="research-section-kicker">OFFICIAL RECORD</span><h3>Awaiting verification</h3><p>Registration holder, covered models, validity and scope have not been retrieved.</p></div></div><p className="comparison-note">Match status: undetermined. A potential certification mismatch can only be flagged once both records are available.</p></section>
-    <section className="research-panel landed-panel" id="report-cost"><div className="research-panel-top"><h2>06 <span>A clearer view of the cost</span></h2>{chip(3, 'Assumptions')}</div><p className="research-section-intro">An illustrative calculator, in INR. Edit assumptions to see the estimate change. Sample rates are not current tariff or exchange-rate advice.</p><div className="cost-ranges">{[['Low scenario', total * .9, '−10% sensitivity'], ['Expected scenario', total, 'Your current assumptions'], ['High scenario', total * 1.15, '+15% sensitivity']].map(([label, value, note], i) => <div key={String(label)} className={i === 1 ? 'cost-expected' : ''}><span>{label}</span><strong>{priced ? money(Number(value)) : '—'}</strong><small>{note}</small></div>)}</div><p className="research-fineprint">Low and high are simple sensitivity scenarios, not quoted bounds. Insurance, storage, penalties and other charges are excluded.</p><div className="cost-layout"><form className="cost-inputs" onSubmit={e => e.preventDefault()}><h3>Make the assumptions yours</h3>{([{ key: 'price', label: 'Unit price · USD', step: '.01' }, { key: 'freight', label: `Freight · ${order.currency}`, step: '.01' }, { key: 'fx', label: 'INR per USD', step: '.01' }, { key: 'duty', label: 'Duty · %', step: '.1' }, { key: 'surcharge', label: 'Surcharge on duty · %', step: '.1' }, { key: 'tax', label: 'Tax · %', step: '.1' }, { key: 'fees', label: 'Handling / other fees · INR', step: '1' }] as const).map(({ key, label, step }) => <label key={key}>{label}<input type="number" min="0" step={step} value={cost[key]} onChange={e => setCost({ ...cost, [key]: e.target.value })} /></label>)}<p className="research-fineprint">Freight conversion assumptions: CNY = USD / 7.2; EUR = USD × 1.1. Replace with your quote. Missing freight is treated as zero.</p></form><div className="cost-breakdown" aria-live="polite" aria-atomic="true"><h3>Where the estimate comes from</h3>{[[`Goods · ${order.quantity} × unit price × FX`, goods], [`Freight · ${order.shippingMode || 'mode not set'}`, freight], ['Assessable base · goods + freight', assessable], [`Duty · ${cost.duty || 0}% of base`, duty], [`Surcharge · ${cost.surcharge || 0}% of duty`, surcharge], [`Tax · ${cost.tax || 0}% of base + duty + surcharge`, tax], ['Handling / other fees', n(cost.fees)]].map(([label, amount]) => <div key={String(label)}><span>{label}</span><strong>{priced ? money(Number(amount)) : '—'}</strong></div>)}<div className="cost-total"><span>Illustrative total<small>{priced ? `${money(total / Number(order.quantity))} per unit` : 'Add a unit price to calculate'}</small></span><strong>{priced ? money(total) : '—'}</strong></div></div></div></section>
-    <section className="research-panel next-panel" id="report-next"><div className="research-panel-top"><h2>07 <span>Your next thoughtful steps</span></h2><span className="research-tag">{done.length} / {tasks.length} done</span></div><div className="next-layout"><div className="action-checklist">{tasks.map((task, i) => <label key={task} className={done.includes(i) ? 'action-complete' : ''}><input type="checkbox" checked={done.includes(i)} onChange={e => setDone(current => e.target.checked ? [...current, i] : current.filter(n => n !== i))} /><span><small>PRIORITY {i + 1}</small>{task}</span></label>)}</div><div className="seller-request"><div><h3>A message to move things along</h3><button onClick={copySeller}>Copy request ↗</button></div><p>{sellerMessage}</p></div></div></section>
-    <div className="report-bottom"><button className="research-text-button" onClick={() => setActiveEvidence(0)}>View supporting details</button><button className="delete-report" onClick={() => setDeleteOpen(true)}>Delete this report</button></div><div role="status" aria-live="polite" aria-atomic="true" className={notice ? "report-toast" : "report-toast-empty"}>{notice}</div>
-    <footer className="research-report-footer"><p>Decision support, not legal clearance, customs approval or a final duty quote. Verify requirements and estimates before ordering.</p><span>Generated {new Date(generated).toLocaleString()} · Local demo · Not saved to a server</span></footer>
-    <dialog ref={evidenceDialog} className="evidence-drawer" aria-labelledby="evidence-title" onCancel={() => setActiveEvidence(null)} onClose={() => setActiveEvidence(null)}><div className="evidence-drawer-heading"><div><span className="research-section-kicker">A CLEARER PAPER TRAIL</span><h2 id="evidence-title">Behind the findings</h2></div><button aria-label="Close evidence drawer" onClick={() => evidenceDialog.current?.close()}>×</button></div><p>Inputs and assumptions are separated from independently retrieved evidence.</p><nav aria-label="Evidence entries">{evidence.map((entry, i) => <button key={entry.title} aria-pressed={activeEvidence === i} onClick={() => setActiveEvidence(i)}>{entry.title}</button>)}</nav>{activeEvidence !== null && <article><span className="research-tag">{evidence[activeEvidence].kind}</span><h3>{evidence[activeEvidence].title}</h3><blockquote>{evidence[activeEvidence].excerpt}</blockquote><p>{evidence[activeEvidence].note}</p><dl><dt>Captured</dt><dd>{new Date(evidence[activeEvidence].time).toLocaleString()}</dd><dt>Retrieval status</dt><dd>No external source retrieved</dd></dl>{evidence[activeEvidence].url && <a href={evidence[activeEvidence].url} target="_blank" rel="noreferrer">Open submitted listing ↗</a>}</article>}</dialog>
-    <dialog ref={deleteDialog} className="delete-dialog" aria-labelledby="delete-title" onClose={() => setDeleteOpen(false)} onCancel={() => setDeleteOpen(false)}><h2 id="delete-title">Clear this demo report?</h2><p>This clears the report, calculator edits and checklist. Your original form details remain available.</p><div><button onClick={() => deleteDialog.current?.close()}>Keep report</button><button onClick={() => { deleteDialog.current?.close(); onDelete(); }}>Clear report</button></div></dialog>
+
+    <div role="status" aria-live="polite" aria-atomic="true" className={notice ? 'report-toast' : 'report-toast-empty'}>{notice}</div>
+
+    <footer className="research-report-footer">
+      <p>{report.disclaimer}</p>
+      <span>Report ID: {report.id}</span>
+    </footer>
+
+    <dialog ref={deleteDialog} className="delete-dialog" aria-labelledby="delete-title"
+      onClose={() => setDeleteOpen(false)} onCancel={() => setDeleteOpen(false)}>
+      <h2 id="delete-title">Delete this report?</h2>
+      <p>This will permanently delete the investigation and its report.</p>
+      <div>
+        <button onClick={() => deleteDialog.current?.close()}>Keep report</button>
+        <button onClick={() => { deleteDialog.current?.close(); onDelete(); }}>Delete report</button>
+      </div>
+    </dialog>
   </>;
 }
