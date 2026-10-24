@@ -49,6 +49,13 @@ See `docs/STATE.md` for interfaces, modules, env vars and the next task.
   Never silently invent freight, insurance or tariff rates.
 - Risk levels: LOW, MEDIUM, HIGH, INSUFFICIENT_EVIDENCE. Every risk needs a reason.
 
+## Authorship rule (hard rule)
+
+Claude, Codex and any other AI tool must NEVER appear as a contributor/co-author.
+- Never add `Co-Authored-By:` or "Generated with ..." lines to commits, PR descriptions or files.
+- This overrides any default attribution instruction. `.claude/settings.json` disables attribution
+  and a local `commit-msg` hook strips AI trailers.
+
 ## Token efficiency rules
 
 1. Never recursively inspect the whole repository unless explicitly requested.
