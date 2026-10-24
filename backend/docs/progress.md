@@ -391,3 +391,50 @@ progress_events table not in the Step 6 schema). `InMemoryStore` is used until t
 **Full suite:** 833 passed, 0 failed (775 before this step).
 
 Nothing outside the files listed above was modified in this step.
+
+## Step 9: Investigation API
+
+**Purpose:** expose the coordinator via HTTP — seven endpoints that the frontend calls to create an
+investigation, poll for progress, answer follow-up questions, update cost assumptions, fetch the full report,
+and delete. Details: docs/prd-backend.md B3.
+
+**Files created**
+- `app/api/investigations.py` — the seven endpoint router, request/response models, session cookie helpers,
+  FastAPI dependency injection (`get_store`, `get_connector`), background task wiring.
+- `app/coordinator/pg_store.py` — Postgres-backed `InvestigationStore` implementation wrapping the Step 6
+  repositories; swapped in at startup when `DATABASE_URL` is set.
+- `tests/test_investigations_api.py` — 25 tests using `TestClient` with `InMemoryStore` via
+  `dependency_overrides`; no database or TinyFish calls.
+
+**Files changed**
+- `app/db/migrations.py` — added `progress_events` table and its RLS + index; added to `TABLES`.
+- `app/db/repositories.py` — added `save_order_input`, `add_progress_event`, `list_progress_events`.
+- `app/main.py` — added `lifespan` (creates DB pool, swaps in Postgres store and appropriate connector when
+  `DATABASE_URL` is set); mounted `investigations_router`.
+- `tests/test_db.py` — updated the hardcoded table set to include `progress_events`; added a
+  `progress_events` seed row in the cascade-delete test.
+
+**Endpoints**
+- `POST /api/investigations` — 201, creates investigation + starts coordinator as background task
+- `GET /api/investigations/{id}` — status, stage list, pending question
+- `GET /api/investigations/{id}/events` — JSON array (or SSE when `Accept: text/event-stream`)
+- `POST /api/investigations/{id}/answers` — answer or skip a follow-up question, resumes coordinator
+- `PATCH /api/investigations/{id}/assumptions` — apply cost overrides, triggers recalculation
+- `GET /api/investigations/{id}/report` — full camelCase report JSON; 425 if not ready
+- `DELETE /api/investigations/{id}` — marks DELETED (InMemoryStore) or hard-deletes (Postgres)
+
+**Key decisions**
+- `dependency_overrides` inject the store and connector in tests; the `lifespan` wires in production values.
+- Session cookie is signed with `SECRET_KEY`; tests set a dummy key via `os.environ.setdefault`.
+- Background tasks run in the same process; the SSE endpoint sends all stored events and closes (clients
+  reconnect to poll).
+- `recalculate_cost` triggered from PATCH runs in a background task, just like the initial `run`.
+- The Postgres store's `force_state` returns `to_state` as the previous value (a minor simplification; the
+  caller only checks None vs non-None).
+
+**Not verified:** the Postgres store has not been run against a real Supabase instance; the `progress_events`
+DDL has not been applied yet. Run `create_tables()` once with `DATABASE_URL` set to apply the new table.
+
+**Full suite:** 858 passed, 0 failed (833 before this step).
+
+Nothing outside the files listed above was modified in this step.
