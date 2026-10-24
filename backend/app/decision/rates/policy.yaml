@@ -1,0 +1,113 @@
+# Rate evidence policy. EVERY NUMBER AND DOMAIN LIST HERE IS PROPOSED, TO CONFIRM.
+# Validated by app/decision/rates/policy.py; see docs/decisions.md section 7.
+# - Keys must match a config entry in cost_assumptions.yaml, or default_freight_inr (feeds both default-freight
+#   entries in one step).
+# - A domain in neither list is tier 3. Tier 1 also requires https. Subdomains of a listed domain match.
+# - tier2_domains are left empty for the team to fill; no secondary site has been chosen.
+# - Percentages are plain numbers (20 means 20%).
+
+version: "v0-proposed"
+max_runs_per_refresh: 10        # proposed, to confirm
+max_domains_per_refresh: 25     # proposed, to confirm
+
+rates:
+  fx_usd_inr:
+    kind: statutory
+    required_unit: inr_per_usd
+    currency_terms: ["USD", "US Dollar", "U.S. Dollar", "United States Dollar"]
+    min_value: 50               # proposed, to confirm
+    max_value: 150              # proposed, to confirm
+    max_change_pct: 5           # proposed, to confirm
+    tier1_domains: [cbic.gov.in]
+    tier2_domains: []
+    max_effective_date_future_days: 1   # proposed, to confirm
+    proposal_expiry_days: 14            # proposed, to confirm
+
+  bcd_pct:
+    kind: statutory
+    required_unit: percent
+    min_value: 0                # proposed, to confirm
+    max_value: 100              # proposed, to confirm
+    max_change_pct: 25          # proposed, to confirm
+    tier1_domains: [cbic.gov.in, egazette.gov.in]
+    tier2_domains: []
+    max_effective_date_future_days: 1
+    proposal_expiry_days: 14
+
+  sws_pct_of_bcd:
+    kind: statutory
+    required_unit: percent
+    min_value: 0                # proposed, to confirm
+    max_value: 100              # proposed, to confirm
+    max_change_pct: 25          # proposed, to confirm
+    tier1_domains: [cbic.gov.in, egazette.gov.in]
+    tier2_domains: []
+    max_effective_date_future_days: 1
+    proposal_expiry_days: 14
+
+  igst_pct:
+    kind: statutory
+    required_unit: percent
+    min_value: 0                # proposed, to confirm
+    max_value: 40               # proposed, to confirm
+    max_change_pct: 25          # proposed, to confirm
+    tier1_domains: [cbic-gst.gov.in, cbic.gov.in, egazette.gov.in]
+    tier2_domains: []
+    max_effective_date_future_days: 1
+    proposal_expiry_days: 14
+
+  default_freight_inr:
+    kind: benchmark
+    required_unit: inr_per_shipment
+    min_value: 100              # proposed, to confirm
+    max_value: 1000000          # proposed, to confirm
+    max_change_pct: 50          # proposed, to confirm
+    tier1_domains: []
+    tier2_domains: []
+    min_samples: 5              # proposed, to confirm
+    min_distinct_domains: 3     # proposed, to confirm
+    max_spread_ratio: 3         # proposed, to confirm
+    max_effective_date_future_days: 1
+    proposal_expiry_days: 14
+
+  clearing_inr:
+    kind: benchmark
+    required_unit: inr_per_shipment
+    min_value: 100              # proposed, to confirm
+    max_value: 200000           # proposed, to confirm
+    max_change_pct: 50          # proposed, to confirm
+    tier1_domains: []
+    tier2_domains: []
+    min_samples: 5
+    min_distinct_domains: 3
+    max_spread_ratio: 3
+    max_effective_date_future_days: 1
+    proposal_expiry_days: 14
+
+  port_cfs_inr:
+    kind: benchmark
+    required_unit: inr_per_shipment
+    min_value: 100              # proposed, to confirm
+    max_value: 200000           # proposed, to confirm
+    max_change_pct: 50          # proposed, to confirm
+    tier1_domains: []
+    tier2_domains: []
+    min_samples: 5
+    min_distinct_domains: 3
+    max_spread_ratio: 3
+    max_effective_date_future_days: 1
+    proposal_expiry_days: 14
+
+  domestic_transport_inr:
+    kind: benchmark
+    required_unit: inr_per_shipment
+    min_value: 100              # proposed, to confirm
+    max_value: 200000           # proposed, to confirm
+    max_change_pct: 50          # proposed, to confirm
+    tier1_domains: []
+    tier2_domains: []
+    min_samples: 5
+    min_distinct_domains: 3
+    max_spread_ratio: 3
+    max_effective_date_future_days: 1
+    proposal_expiry_days: 14
