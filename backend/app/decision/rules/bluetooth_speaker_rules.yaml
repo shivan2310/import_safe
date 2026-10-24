@@ -1,0 +1,87 @@
+# Requirement rules for the bluetooth_speaker category. See docs/decisions.md section 8.
+# Validated by app/decision/rules/rule_engine.py.
+#
+# ALL RULE CONTENT REQUIRES HUMAN VERIFICATION AGAINST OFFICIAL SOURCES BEFORE DEMO.
+# The areas, conditions, evidence types and source links below are proposals. The source
+# links are portal home pages only, to confirm; no deep link has been checked.
+#
+# `condition` is a structured dict, never an expression string. Leaf: {field, op, value};
+# combinators: {all: [...]}, {any: [...]}, {not: {...}}.
+
+category: bluetooth_speaker
+rules_version: "v0-proposed"
+content_status: "requires human verification against official sources before demo"
+
+rules:
+  - id: bt_speaker_import_policy_v1
+    category: bluetooth_speaker
+    area: import_policy
+    condition: {field: category, op: eq, value: bluetooth_speaker}
+    result_if_true: potentially_applicable
+    requires_evidence: [itc_hs_policy_record]
+    source_urls: ["https://www.dgft.gov.in/"]
+    version: "1.0"
+    effective_date: "2026-10-24"
+    last_reviewed: "2026-10-24"
+    mandatory: true
+    prohibition: false
+    content_status: "requires human verification against official sources before demo"
+
+  - id: bt_speaker_bis_v1
+    category: bluetooth_speaker
+    area: bis
+    condition: {field: category, op: eq, value: bluetooth_speaker}
+    result_if_true: potentially_applicable
+    requires_evidence: [registration_record]
+    source_urls: ["https://www.crsbis.in/"]
+    version: "1.0"
+    effective_date: "2026-10-24"
+    last_reviewed: "2026-10-24"
+    mandatory: true
+    prohibition: false
+    content_status: "requires human verification against official sources before demo"
+
+  - id: bt_speaker_wireless_v1
+    category: bluetooth_speaker
+    area: wireless
+    condition:
+      any:
+        - {field: has_bluetooth, op: eq, value: true}
+        - {field: has_wifi, op: eq, value: true}
+    result_if_true: potentially_applicable
+    requires_evidence: [wpc_eta_record]
+    source_urls: ["https://saralsanchar.gov.in/"]
+    version: "1.0"
+    effective_date: "2026-10-24"
+    last_reviewed: "2026-10-24"
+    mandatory: true
+    prohibition: false
+    content_status: "requires human verification against official sources before demo"
+
+  - id: bt_speaker_battery_v1
+    category: bluetooth_speaker
+    area: battery
+    condition: {field: has_battery, op: eq, value: true}
+    result_if_true: potentially_applicable
+    requires_evidence: [battery_certification_record]
+    source_urls: ["https://www.crsbis.in/"]
+    version: "1.0"
+    effective_date: "2026-10-24"
+    last_reviewed: "2026-10-24"
+    mandatory: true
+    prohibition: false
+    content_status: "requires human verification against official sources before demo"
+
+  - id: bt_speaker_labelling_v1
+    category: bluetooth_speaker
+    area: labelling
+    condition: {field: category, op: eq, value: bluetooth_speaker}
+    result_if_true: potentially_applicable
+    requires_evidence: [label_evidence]
+    source_urls: ["https://consumeraffairs.nic.in/"]
+    version: "1.0"
+    effective_date: "2026-10-24"
+    last_reviewed: "2026-10-24"
+    mandatory: true
+    prohibition: false
+    content_status: "requires human verification against official sources before demo"
