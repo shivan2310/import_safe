@@ -459,3 +459,55 @@ checks, so the score is 10 (still `conditional_import`, high).
 - All three are confirmed by tests: `test_missing_identity_result_counts_as_unverified`,
   `test_no_mandatory_checks_is_insufficient_information`, `test_likely_importable_is_low_even_with_bonuses`.
 - Still to confirm before demo: rule content and source URLs.
+
+## 9. Report schema (frontend contract)
+
+Code: `app/decision/report_schema.py` (models), `app/decision/report_builder.py` (`assemble_report`).
+
+**The report models are the contract with the frontend.** Changing a field name, type or meaning is a contract
+change and needs a matching frontend change.
+
+### Shape
+
+- Follows PRD B5 with these differences:
+  - JSON keys are camelCase (`riskLevel`, `evidenceIds`, `sellerClaims`); Python fields are snake_case.
+    Serialise with `FullReport.to_frontend()` (or `model_dump(by_alias=True)`). No snake_case key appears in
+    the JSON.
+  - Enum values stay lowercase (section 1), for example `conditional_import`, not `CONDITIONAL_IMPORT`.
+  - Money and rates are Decimal and serialise as strings (`"1542.88"`), never floats.
+  - Extra fields beyond B5: `score`, `reasons`, `nextActions` (numbered, 1 = most urgent; `nextAction` is the
+    first one's text), `ruleVersions` (`rule_id@version`), `questionsSkipped`. The summary classification also
+    carries `confidence` and `candidateHsCodes` (suggestions only).
+- Every model rejects unknown fields. Only existing enums are used; evidence `sourceType` is one of `listing`,
+  `official_portal`, `user_upload`, `rule_source`.
+- `disclaimer` is always exactly "Decision support only. Not legal clearance or customs approval." Any other
+  value is rejected.
+- No `generated_at`: the builder never reads the clock. The caller adds a timestamp when it stores the report.
+
+### Validation
+
+- **Evidence integrity:** every evidence ID referenced by a profile fact, a check or the certification
+  comparison must appear in `evidence`. A dangling ID or a duplicate evidence ID is a hard validation error.
+- Profile facts sit in the list matching their `kind` (`confirmed`, `seller_claim`, `user_supplied`). Confirmed
+  facts need an `evidence_id`. Fact values are str, int, bool or Decimal; floats are rejected.
+- Evidence `retrievedAt` must be timezone-aware.
+
+### Assembly
+
+- `assemble_report(investigation_id, classification, checks, identity_result, cost_estimate, profile, evidence,
+  questions_skipped)` calls `compute_risk` with the default risk config.
+- **Quantity and purpose are read from the profile's `user_supplied` facts** (`quantity` as int, `purpose` as
+  str). A wrong type is an error. A missing fact, or a field listed in `questions_skipped`, is passed to
+  `compute_risk` as `None`, so the outcome is `insufficient_information` (section 8). A skipped `category` drops
+  the classification.
+- `identity_result` is the verification engine's `VerificationResult` (or `None`); its overall result is scored and
+  the full result becomes `certificationComparison`. `None` gives a null comparison and is scored as unverified.
+- `summary.bis` and `summary.wireless` are the status of the first check in that area, or null.
+- `summary.sellerClaimsBis` is true when a seller-claim fact `bis_registration_no` or `certification_claims` has
+  a non-empty value (or `true`).
+- `summary.illustrativeCostPerUnit` is the expected per-unit cost; `cost` is null when no estimate was made.
+
+### Demo
+
+The 100-speaker demo (five rules, identity unverified, resale, quantity 100, needs_confirmation, golden cost
+inputs) gives `conditional_import`, high, score 10, expected cost per unit 1542.88 INR.

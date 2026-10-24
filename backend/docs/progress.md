@@ -268,3 +268,33 @@ five-rule run on the demo product scores 10 (same outcome and level).
 **Full suite:** 618 passed, 0 failed (471 before this step).
 
 Nothing outside the files listed above was modified in this step.
+
+## Step 5: report schema and assembly
+
+**Purpose:** the full report object (PRD B5) as Pydantic v2 models, and a pure builder that assembles it from
+the classification, checks, verification result, cost estimate, profile and evidence, calling `compute_risk`.
+The schema is the frontend contract. No API code, no DB, no TinyFish calls. Details: `docs/decisions.md`
+section 9.
+
+**Files created**
+- `app/decision/report_schema.py` — `ProductFact`, `ProductProfile`, `RequirementCheckReport`,
+  `ReportFieldComparison`, `CertificationComparisonReport`, `ReportCostLine`, `ReportAssumption`, `ReportCost`,
+  `NextAction`, `EvidenceItem`, `SummaryClassification`, `SummaryCost`, `ReportSummary`, `FullReport`
+  (camelCase JSON, fixed disclaimer, evidence-ID integrity check).
+- `app/decision/report_builder.py` — `assemble_report(...)`.
+- `tests/fixtures/demo_report_inputs.py` — the 100-speaker demo inputs.
+- `tests/test_report_builder.py` — 39 tests.
+
+**Files changed (append only)**
+- `docs/decisions.md` — added Section 9.
+- `docs/progress.md` — appended this section.
+
+**Approved:** camelCase keys with lowercase enum values; quantity and purpose read from `user_supplied` facts;
+dangling evidence ID is a hard validation error; the extra models and extra `FullReport` fields.
+
+**Demo:** `conditional_import`, high, score 10, disclaimer present, cost per unit 1542.88, no "fraud" or
+"fake" in the JSON.
+
+**Full suite:** 657 passed, 0 failed (618 before this step).
+
+Nothing outside the files listed above was modified in this step.
