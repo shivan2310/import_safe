@@ -357,3 +357,37 @@ shape the agent returns for our goals and the registry portal URL (`https://www.
 **Full suite:** 775 passed, 0 failed (754 before this step).
 
 Nothing outside the files listed above was modified in this step.
+
+## Step 8: Investigation Coordinator and State Machine
+
+**Purpose:** connect TinyFish, the decision engines and storage into a runnable investigation pipeline.
+Details: docs/decisions.md section 12 (decisions listed below).
+
+**Files created**
+- `app/coordinator/__init__.py` — empty package marker.
+- `app/coordinator/states.py` — `InvestigationState` (13 values), `can_transition`, `stage_progress`,
+  `parse_state`, `PIPELINE`, `TERMINAL`, `RESTING`.
+- `app/coordinator/store.py` — `InvestigationStore` Protocol; `InMemoryStore` (offline/test implementation);
+  `OrderInput`, `ProgressEvent` dataclasses.
+- `app/coordinator/profile_builder.py` — `build_listing_facts`, `build_order_facts`, `profile_from_facts`,
+  `extracted_from_facts`, `rule_profile`, `cert_claim_from_facts`, `registry_record`, `parse_price`,
+  `evidence_items`. Internal `rule_check:*` facts excluded from `_latest` by default.
+- `app/coordinator/coordinator.py` — `run()` and `recalculate_cost()` public API. Seven internal stage
+  functions. MAX_RETRIES=2, RETRY_DELAY_S=2.0. Never raises out of `run`.
+- `tests/test_coordinator.py` — 58 tests covering states, store, profile builder and coordinator.
+
+**Key decisions**
+- `run()` picks up from the stored state and is safe to call multiple times (RESTING states return immediately).
+- Rule check facts saved as `FactKind.confirmed` with a `rule_check:` prefix; excluded from `ProductProfile`
+  by `_latest(include_internal=False)` so they never violate the evidence_id requirement.
+- A confirmed listing fact that has no excerpt is saved as `seller_claim`; the profile builder never invents
+  evidence IDs.
+- `recalculate_cost()` re-runs cost engine and report assembly only; no TinyFish calls.
+- On any unhandled exception `run()` calls `_fail()` and logs; it never propagates the exception to the caller.
+
+**Not verified:** the Postgres-backed `InvestigationStore` implementation is deferred to Step 9 (it needs a
+progress_events table not in the Step 6 schema). `InMemoryStore` is used until then.
+
+**Full suite:** 833 passed, 0 failed (775 before this step).
+
+Nothing outside the files listed above was modified in this step.
