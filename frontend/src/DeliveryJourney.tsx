@@ -1,8 +1,20 @@
+import { useEffect, useState } from 'react';
 import './DeliveryJourney.css';
 
-/** Decorative arrival sequence that plays once each time Home opens. */
+/** Decorative arrival sequence that loops while Home is mounted. */
 export default function DeliveryJourney() {
-  return <div className="delivery-journey" aria-hidden="true">
+  const [departed, setDeparted] = useState(false);
+  const [cycle, setCycle] = useState(0);
+  useEffect(() => {
+    if (!departed) return;
+    // Let the message fade in, then hold it for 1.5 seconds before restarting.
+    const timer = window.setTimeout(() => {
+      setDeparted(false);
+      setCycle(value => value + 1);
+    }, 1650);
+    return () => window.clearTimeout(timer);
+  }, [departed]);
+  return <div key={cycle} className="delivery-journey" aria-hidden="true">
     <div className="delivery-road"><div /></div>
     <div className="delivery-drop">
       <svg className="delivery-canopy" viewBox="0 0 160 150" fill="none">
@@ -12,7 +24,7 @@ export default function DeliveryJourney() {
       <svg className="delivery-parcel" viewBox="0 0 80 72" fill="none"><path d="m6 18 34-14 34 14-34 15Z" fill="#eddbb4" stroke="#776a4e" strokeWidth="1.7"/><path d="m6 18 34 15v34L6 52Z" fill="#d7bc8a" stroke="#776a4e" strokeWidth="1.7"/><path d="m40 33 34-15v34L40 67Z" fill="#e8cfa1" stroke="#776a4e" strokeWidth="1.7"/><path d="m27 9 34 15v14l-10 4V28L17 14" fill="#a9bc98"/><path d="m49 49 16-7m-16 13 10-4" stroke="#776a4e" strokeWidth="2"/></svg>
     </div>
     <div className="delivery-truck-position">
-      <div className="delivery-truck-drive">
+      <div className="delivery-truck-drive" onAnimationEnd={event => { if (event.animationName === 'delivery-depart') setDeparted(true); }}>
         <svg className="delivery-truck" viewBox="0 0 260 145" fill="none">
           <path d="M13 99V65l30-35h51v70" fill="#a9bc98" stroke="#596e49" strokeWidth="2"/><path d="m25 65 24-26h27v26Z" fill="#f9f6ed" stroke="#596e49" strokeWidth="2"/>
           <path d="M101 66h142v40H94V77" fill="#dce5d0" stroke="#596e49" strokeWidth="2"/><path d="M101 66h142" stroke="#596e49" strokeWidth="4"/><path d="M10 105h238v12H10Z" fill="#596e49"/><path d="M111 81h118M111 94h118" stroke="#a9bc98"/>
@@ -20,9 +32,12 @@ export default function DeliveryJourney() {
           <path d="M13 86h10M80 76h7" stroke="#f9f6ed" strokeWidth="4" strokeLinecap="round"/>
           <g className="delivery-loaded-parcel"><path d="M151 31h48v35h-48Z" fill="#e8cfa1" stroke="#776a4e" strokeWidth="2"/><path d="M170 31h10v20h-10Z" fill="#a9bc98"/></g>
         </svg>
-        <span className="delivery-truck-label">OUT FOR DELIVERY ↤</span>
       </div>
     </div>
+    {departed && <p className="delivery-arrival-message">Reaching soon</p>}
   </div>;
 }
+
+
+
 
