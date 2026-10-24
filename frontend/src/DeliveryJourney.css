@@ -1,20 +1,33 @@
 /* The scene stays inside the hero artwork, separate from every text column. */
 .landing-hero-art{position:relative;isolation:isolate;min-height:490px;overflow:hidden}
 .delivery-globe{position:absolute;inset:0;opacity:.22;z-index:-1;pointer-events:none}
-.delivery-journey{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;--delivery-right:24px;--parcel-landing:296px}
-.delivery-drop{position:absolute;right:calc(var(--delivery-right) + 4px);top:0;width:144px;transform-origin:50% 0;will-change:transform;animation:delivery-descend 4.5s cubic-bezier(.25,.1,.25,1) .4s both,delivery-hide .2s 4.9s forwards}
+.delivery-journey{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;container-type:inline-size;--delivery-right:24px;--parcel-landing:324px}
+.delivery-drop{position:absolute;right:calc(var(--delivery-right) + 4px);top:0;width:144px;transform-origin:50% 0;will-change:transform;animation:delivery-descend 4.5s linear .4s both,delivery-hide .2s 4.9s forwards}
 .delivery-canopy{position:absolute;width:144px;height:135px;bottom:49px;left:0;animation:delivery-hide .6s 4.3s forwards}
 .delivery-parcel{display:block;width:66px;height:60px;margin:0 auto;filter:drop-shadow(0 5px 5px #596e4915)}
-.delivery-road{position:absolute;bottom:30px;left:0;right:0;height:27px;background:#dce2d2;border-top:2px solid #a9bc98;border-bottom:2px solid #a9bc98}
-.delivery-road>div{position:absolute;top:11px;width:100%;border-top:2px dashed #fffdf5}
-.delivery-truck-position{position:absolute;bottom:48px;right:var(--delivery-right);width:220px}
+.delivery-road{position:absolute;bottom:26px;left:-25px;right:-25px;height:44px;background:linear-gradient(#c3cdb8,#e2e8d8);border-top:2px solid #a9bc98;border-bottom:3px solid #91a381;transform:perspective(450px) rotateX(50deg) skewX(-18deg);transform-origin:center;box-shadow:0 5px 0 #a9bc9830}
+.delivery-road>div{position:absolute;top:20px;width:100%;border-top:2px dashed #fffdf5}
+.delivery-truck-position{position:absolute;bottom:40px;right:var(--delivery-right);width:220px;animation:delivery-enter 1.8s cubic-bezier(.2,.65,.3,1) both}
 .delivery-truck{display:block;width:220px;height:auto}
-.delivery-truck-label{display:block;text-align:center;font:600 8px Inter,sans-serif;letter-spacing:1.8px;color:#596e49;margin-top:10px}
 .delivery-loaded-parcel{opacity:0;animation:delivery-show .2s 4.9s forwards}
 .delivery-truck-drive{animation:delivery-depart 4s cubic-bezier(.45,0,.7,1) 5.6s forwards}
-@keyframes delivery-descend{0%{transform:translateY(-90px) rotate(-5deg)}40%{transform:translateY(130px) rotate(4deg)}75%{transform:translateY(240px) rotate(-2deg)}100%{transform:translateY(var(--parcel-landing)) rotate(0)}}
+@keyframes delivery-descend{from{transform:translateY(-90px)}to{transform:translateY(var(--parcel-landing))}}
 @keyframes delivery-hide{to{opacity:0}}
 @keyframes delivery-show{to{opacity:1}}
-@keyframes delivery-depart{to{transform:translateX(calc(-100% - 600px))}}
-@media(max-width:650px){.landing-hero-art{min-height:420px}.delivery-journey{--delivery-right:12px;--parcel-landing:226px}.delivery-globe{opacity:.16}}
+@keyframes delivery-depart{to{transform:translateX(calc(-100cqw + var(--delivery-right)))}}
+@media(max-width:650px){.landing-hero-art{min-height:420px}.delivery-journey{--delivery-right:12px;--parcel-landing:254px}.delivery-globe{opacity:.16}}
 @media(prefers-reduced-motion:reduce){.delivery-journey *{animation:none!important}.delivery-drop{display:none}.delivery-loaded-parcel{opacity:1}}
+ .delivery-truck-drive{position:relative}
+.delivery-truck-drive::before{content:"";position:absolute;left:16px;right:5px;bottom:4px;height:9px;border-radius:50%;background:#34432e26;filter:blur(3px);z-index:-1}
+.delivery-arrival-message{position:absolute;bottom:64px;left:0;right:0;margin:0;text-align:center;font:400 20px/1.3 Fraunces,Georgia,serif;color:#596e49;animation:delivery-show .15s ease-out both;opacity:0}
+
+
+
+/* Horizontal sway is independent of the constant-speed vertical descent. */
+.delivery-drop{offset-path:none;animation:delivery-descend 4.5s linear .4s both,delivery-sway 4.5s cubic-bezier(.37,0,.63,1) .4s both,delivery-hide .2s 4.9s forwards}
+@keyframes delivery-sway{0%{translate:0 0;rotate:0deg}15%{translate:12px 0;rotate:2deg}40%{translate:-12px 0;rotate:-2deg}65%{translate:8px 0;rotate:1.5deg}85%{translate:-4px 0;rotate:-1deg}100%{translate:0 0;rotate:0deg}}
+
+
+@keyframes delivery-enter{from{transform:translateX(calc(220px + var(--delivery-right)))}to{transform:translateX(0)}}
+
+
