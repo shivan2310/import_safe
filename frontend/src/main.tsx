@@ -40,7 +40,7 @@ function Frontend() {
   }, [authReady, user, hash]);
 
   function openAnalyzer() {
-    window.location.hash = 'analyze';
+    window.history.replaceState(null, '', '#analyze');
     setHash('#analyze');
     window.scrollTo(0, 0);
   }

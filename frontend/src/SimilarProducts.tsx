@@ -74,7 +74,7 @@ function CompareModal({
           <span className="compare-col-label">ALTERNATIVE</span>
           <h3>{product.name}</h3>
           <p className="compare-seller">{product.seller.name}
-            {product.seller.verificationStatus === 'fixture' && <span className="compare-badge fixture-badge">Demo</span>}
+            {product.seller.verificationStatus === 'fixture' && <span className="compare-badge fixture-badge">Sample</span>}
             {product.seller.verificationStatus === 'marketplace_listed' && <span className="compare-badge marketplace-badge">Alibaba listing</span>}
           </p>
           {product.price && <div className="compare-price">
@@ -116,7 +116,7 @@ function CompareModal({
         <p className="research-fineprint">
           {product.seller.verificationStatus === 'marketplace_listed'
             ? 'This seller was found on a public marketplace. Their identity and product quality have not been independently verified.'
-            : 'This is demo data and does not represent a real seller or product.'}
+            : 'This is sample data for illustration. It does not represent a real seller or product.'}
         </p>
       </div>
 
@@ -148,7 +148,7 @@ function ProductCard({ product, onCompare }: { product: SimilarProduct; onCompar
           <p className="sp-seller-name">
             {product.seller.name}
             {product.seller.verificationStatus === 'fixture' && (
-              <span className="sp-badge sp-badge-fixture">Demo</span>
+              <span className="sp-badge sp-badge-fixture">Sample</span>
             )}
             {product.seller.verificationStatus === 'marketplace_listed' && (
               <span className="sp-badge sp-badge-marketplace">Alibaba</span>
@@ -223,7 +223,7 @@ export default function SimilarProducts({
         <p>Compare alternatives from marketplace listings.</p>
         {isFixture && (
           <div className="sp-fixture-notice" role="status">
-            <strong>Demo data</strong> — these listings are illustrative, not real products or sellers.
+            <strong>Sample data</strong> — these listings are illustrative, not real products or sellers.
           </div>
         )}
       </div>
