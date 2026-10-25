@@ -113,8 +113,10 @@
 .signup-welcome-icon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: #dce5d0; color: var(--text-link); font-size: 22px; }
 .signup-welcome strong { display: block; font-size: 11px; font-weight: 600; color: var(--forest); }
 .signup-welcome div > span { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
-.signup-page .login-field { height: 58px; margin-top: 9px; }
-.signup-password-hint { margin: 7px 0 0; color: var(--text-muted); font-size: 10px; }
+.signup-page .login-field { height: 58px; margin-top: 10px; }
+.signup-page form > .login-field:first-child { margin-top: 2px; }
+.signup-password-hint { margin: 2px 0 0; color: var(--text-muted); font-size: 9.5px; line-height: 1.5; }
+.signup-confirm-field { margin-top: 4px !important; }
 .signup-demo-note { margin: 18px 0; color: var(--text-muted); font-size: 10px; line-height: 1.6; }
 .signup-page .login-feedback { margin-bottom: 18px; }
 .signup-page .login-submit { font-size: 19px; padding-right: 34px; }
