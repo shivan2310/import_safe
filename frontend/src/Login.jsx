@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
+import { supabase } from './supabase';
 import './Login.css';
 
 const FLIGHT_PATH = 'M 1120 -100 C 980 40 420 80 350 260 C 260 490 880 470 900 240 C 920 40 450 200 560 460 C 650 660 1080 560 1140 850';
@@ -59,6 +60,7 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
   const [visible, setVisible] = useState(false);
   const [focused, setFocused] = useState(false);
   const [status, setStatus] = useState('idle');
+  const [errorMsg, setErrorMsg] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [trailPath, setTrailPath] = useState(FLIGHT_PATH);
   const timer = useRef(null);
@@ -109,19 +111,43 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     if (status === 'loading' || status === 'success') return;
+    if (isSignup && password !== confirmation) {
+      setAttempt(v => v + 1);
+      setErrorMsg('Those passwords don\'t match. Give it another try.');
+      setStatus('error');
+      return;
+    }
     setStatus('loading');
-    timer.current = setTimeout(() => {
-      if (isSignup ? password !== confirmation : password !== 'demo123') {
-        setAttempt(value => value + 1);
+    setErrorMsg('');
+    try {
+      let authError;
+      if (isSignup) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: name } },
+        });
+        authError = error;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        authError = error;
+      }
+      if (authError) {
+        setAttempt(v => v + 1);
+        setErrorMsg(authError.message);
         setStatus('error');
       } else {
         setStatus('success');
         timer.current = setTimeout(() => onSuccess?.({ email }), reducedMotion ? 400 : 1500);
       }
-    }, 1100);
+    } catch {
+      setAttempt(v => v + 1);
+      setErrorMsg('Something went wrong. Please try again.');
+      setStatus('error');
+    }
   }
 
   return (
@@ -164,12 +190,12 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
             <label htmlFor="login-password">Password</label><span className="field-line" />
             <button className="password-toggle" type="button" aria-label={visible ? 'Hide password' : 'Show password'} aria-pressed={visible} onClick={() => setVisible(!visible)}><Eye visible={visible} /></button>
           </div>
-          {isSignup ? <><p className="signup-password-hint">Make it yours. Use at least 8 characters.</p><div className="login-field"><input id="signup-confirm" type={visible ? 'text' : 'password'} name="confirm-password" autoComplete="new-password" placeholder=" " value={confirmation} onChange={event => { setConfirmation(event.target.value); if (status === 'error') setStatus('idle'); }} required aria-invalid={status === 'error'} aria-describedby="login-feedback" disabled={status === 'loading' || status === 'success'} /><label htmlFor="signup-confirm">Confirm password</label><span className="field-line" /></div><p className="signup-demo-note">A preview of your first step. No account is created or password saved.</p></> : <div className="forgot-row"><a href="#forgot-password" onClick={event => { event.preventDefault(); setPasswordHelp(value => !value); onForgotPassword?.(event); }} aria-expanded={passwordHelp} aria-controls="password-help">Forgot password?</a></div>}
-          {passwordHelp && <p id="password-help" className="signup-demo-note" role="status">This is a demo workspace. Use demo123 to log in; password reset will be available when account services are connected.</p>}
+          {isSignup ? <><p className="signup-password-hint">Make it yours. Use at least 8 characters.</p><div className="login-field"><input id="signup-confirm" type={visible ? 'text' : 'password'} name="confirm-password" autoComplete="new-password" placeholder=" " value={confirmation} onChange={event => { setConfirmation(event.target.value); if (status === 'error') setStatus('idle'); }} required aria-invalid={status === 'error'} aria-describedby="login-feedback" disabled={status === 'loading' || status === 'success'} /><label htmlFor="signup-confirm">Confirm password</label><span className="field-line" /></div></> : <div className="forgot-row"><a href="#forgot-password" onClick={event => { event.preventDefault(); setPasswordHelp(value => !value); onForgotPassword?.(event); }} aria-expanded={passwordHelp} aria-controls="password-help">Forgot password?</a></div>}
+          {passwordHelp && <p id="password-help" className="signup-demo-note" role="status">Enter your email address and we'll send you a reset link.</p>}
           <button className="login-submit" type="submit" disabled={status === 'loading' || status === 'success'} aria-busy={status === 'loading'}>
             {status === 'loading' ? <><span className="login-spinner" /> Finding your place…</> : status === 'success' ? <><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg> You’re right where you belong</> : <>{isSignup ? 'Create your account' : 'Log in'} <span aria-hidden="true">↗</span></>}
           </button>
-          <p id="login-feedback" className={`login-feedback ${status === 'error' ? 'has-error' : ''}`} role="status" aria-live="polite">{status === 'error' ? (isSignup ? 'Those passwords don’t match. Give it another try.' : 'That password didn’t land. Try demo123.') : status === 'success' ? (isSignup ? 'All set. Opening your demo workspace…' : 'You’re in. Welcome back.') : isSignup ? 'Thoughtful beginnings. Endless possibilities.' : 'Demo password: demo123'}</p>
+          <p id="login-feedback" className={`login-feedback ${status === ‘error’ ? ‘has-error’ : ‘’}`} role="status" aria-live="polite">{status === ‘error’ ? (errorMsg || ‘Something went wrong. Please try again.’) : status === ‘success’ ? (isSignup ? "All set. Opening your workspace…" : "You’re in. Welcome back.") : isSignup ? ‘Thoughtful beginnings. Endless possibilities.’ : ‘Your import intelligence workspace.’}</p>
         </form>
         <div className="card-divider"><span /> MAKE YOURSELF AT HOME <span /></div>
         <p className="signup-copy">{isSignup ? 'Already found your place?' : 'New around here?'} <a href={isSignup ? '#login' : '#sign-up'} onClick={isSignup ? undefined : onSignUp}>{isSignup ? 'Log in' : 'Sign up'} <span aria-hidden="true">↗</span></a></p>

@@ -131,14 +131,24 @@ async def _stage_read_listing(store: InvestigationStore, connector: TinyFishConn
     result = await _tinyfish_with_retry(connector.extract_listing, order.url,
                                         investigation_id=investigation_id, operation="extract_listing")
     if result is None or result.failed:
-        question = QuestionIn(id=new_ulid(), field="listing_url",
-                              prompt="The product listing could not be fetched. Please paste the page text manually.",
-                              why_it_matters="Without the listing we cannot extract the product details.",
-                              status=QUESTION_OPEN, created_at=_now())
+        geo_blocked = result is not None and getattr(result, "status", "") == "GEO_BLOCKED"
+        if geo_blocked:
+            prompt = (
+                "This Alibaba listing is geo-restricted — the seller has blocked it from being viewed "
+                "outside certain regions. Please try a different listing URL for the same product, "
+                "or paste the product description text here manually."
+            )
+            why = "Alibaba restricts some listings by region; a different URL for the same product usually works."
+        else:
+            prompt = "The product listing could not be fetched. Please paste the page text manually."
+            why = "Without the listing we cannot extract the product details."
+        question = QuestionIn(id=new_ulid(), field="listing_url", prompt=prompt,
+                              why_it_matters=why, status=QUESTION_OPEN, created_at=_now())
         await store.save_question(investigation_id, question)
         await store.force_state(investigation_id, S.NEEDS_INPUT)
         await _emit(store, investigation_id, S.NEEDS_INPUT, StageState.needs_input,
-                    "Could not fetch the listing; awaiting manual input.")
+                    "Listing geo-restricted; awaiting a different URL or manual input." if geo_blocked
+                    else "Could not fetch the listing; awaiting manual input.")
         return False
     facts, evidence = build_listing_facts(result, investigation_id)
     order_facts = build_order_facts(order)
@@ -205,6 +215,9 @@ async def _stage_check_requirements(store: InvestigationStore, investigation_id:
     rp = rule_profile(extracted, classification)
     category = (classification.category if classification and classification.category else
                 rp.get("category", "bluetooth_speaker"))
+    # evaluate_rules filters by rp["category"]; ensure it's set even when classification failed.
+    if "category" not in rp:
+        rp["category"] = category
     rules = load_rules(category)
     checks = evaluate_rules(rp, rules)
     # Persist rule checks as user-visible facts so they survive restarts.
@@ -450,6 +463,8 @@ async def _load_stored_checks(store: InvestigationStore, investigation_id: str,
     rp = rule_profile(extracted, classification)
     category = (classification.category if classification and classification.category else
                 rp.get("category", "bluetooth_speaker"))
+    if "category" not in rp:
+        rp["category"] = category
     rules = load_rules(category)
     return evaluate_rules(rp, rules)
 

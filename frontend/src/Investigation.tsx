@@ -10,7 +10,7 @@ const states = ['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Prad
 const empty = { url: '', quantity: '', state: '', city: '', purpose: 'personal', variant: '', shipping: '', currency: 'USD', shippingMode: '' };
 type Details = typeof empty;
 
-export default function Investigation({ onLogout }: { onLogout: () => void }) {
+export default function Investigation({ onLogout, user }: { onLogout: () => void; user?: { email?: string } }) {
   const reduced = useReducedMotion();
   const [details, setDetails] = useState<Details>(empty);
   const [certificates, setCertificates] = useState<string[]>([]);
@@ -62,7 +62,7 @@ export default function Investigation({ onLogout }: { onLogout: () => void }) {
   }
   if (submitted) return <InvestigationFlow order={submitted} onBack={() => { setSubmitted(null); window.scrollTo(0, 0); }} onLogout={onLogout} historyControl={historyControl} />;
   return <div className="investigation-page">
-    <header className="workspace-header"><div className="workspace-header-start">{historyControl}<a className="workspace-brand" href="#analyze"><img className="site-logo" src="/logo.png" alt="" width="40" height="40" /> importsafe</a></div><nav aria-label="Workspace"><ProfileMenu onLogout={onLogout} /></nav></header>
+    <header className="workspace-header"><div className="workspace-header-start">{historyControl}<a className="workspace-brand" href="#analyze"><img className="site-logo" src="/logo.png" alt="" width="40" height="40" /> importsafe</a></div><nav aria-label="Workspace"><ProfileMenu onLogout={onLogout} email={user?.email} /></nav></header>
     <main className="workspace-main">
       <motion.div initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5 }}>
         <div className="workspace-eyebrow"><span /> YOUR IMPORT JOURNEY, A LITTLE CLEARER</div>

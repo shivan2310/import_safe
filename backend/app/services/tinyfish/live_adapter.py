@@ -69,12 +69,29 @@ class LiveTinyFishConnector:
         failed = outcome["failed"] or not outcome["fields"]
         return ExtractionResult(failed=failed, **{k: v for k, v in outcome.items() if k != "failed"})
 
+    _GEO_BLOCK_PHRASES = ("can't be shipped to your region", "cannot be placed and/or shipped", "product not available")
+
     async def _extract_via_fetch(self, url: str) -> Optional[ExtractionResult]:
         """Fetch page via TinyFish Fetch API and parse fields from markdown. Returns None to fall back."""
         source_url = clean_text(url, 2000) or "N/A"
         page_text = await self._fetch_page_text(url)
         if page_text is None:
             return None
+        # Detect Alibaba geo-block — return a clear failed result instead of falling through to automation
+        lower = page_text.lower()
+        if any(phrase in lower for phrase in self._GEO_BLOCK_PHRASES):
+            logger.warning("alibaba geo-block detected for %s", source_url)
+            return ExtractionResult(
+                raw_text="",
+                fields={},
+                source_url=source_url,
+                retrieved_at=datetime.now(timezone.utc),
+                excerpt_map={},
+                run_id=None,
+                steps_used=0,
+                status="GEO_BLOCKED",
+                failed=True,
+            )
         extracted_json = self._parse_markdown_fields(page_text)
         if extracted_json is None:
             return None

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import './ProfileMenu.css';
 
-export default function ProfileMenu({ onLogout }: { onLogout: () => void }) {
+export default function ProfileMenu({ onLogout, email }: { onLogout: () => void; email?: string }) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -38,7 +38,7 @@ export default function ProfileMenu({ onLogout }: { onLogout: () => void }) {
     </div>}
     <dialog ref={profile} className="profile-dialog" aria-labelledby="profile-title">
       <h2 id="profile-title">Your profile</h2>
-      <p>You’re using a demo session. Account details aren’t saved in this preview.</p>
+      {email && <p><strong>{email}</strong></p>}
       <button type="button" onClick={() => profile.current?.close()}>Close</button>
     </dialog>
   </div>;

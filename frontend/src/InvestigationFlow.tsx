@@ -267,8 +267,11 @@ const RISK_LABEL: Record<string, string> = {
 };
 
 const CHECK_STATUS_LABEL: Record<string, string> = {
-  clear: 'Clear', flagged: 'Flagged', needs_details: 'Needs details',
-  not_applicable: 'Not applicable', unassessed: 'Unassessed',
+  verified: 'Clear',
+  not_applicable: 'Not applicable',
+  potentially_applicable: 'May apply',
+  unverified: 'Needs details',
+  contradiction_detected: 'Flagged',
 };
 
 // Label map for cost breakdown lines — display names only, no backend schema changes
@@ -423,7 +426,7 @@ function LiveReport({ order, report, onDelete, titleRef, invId }: {
     <section className="research-panel requirements-panel" id="report-requirements">
       <div className="research-panel-top">
         <h2>03 <span>The requirement checks</span></h2>
-        <span className="research-tag">{report.checks.filter(c => c.status === 'clear').length} clear · {report.checks.filter(c => c.status !== 'clear').length} open</span>
+        <span className="research-tag">{report.checks.filter(c => c.status === 'verified' || c.status === 'not_applicable').length} clear · {report.checks.filter(c => c.status !== 'verified' && c.status !== 'not_applicable').length} open</span>
       </div>
       <p className="research-section-intro">Compliance checks identified for this product.</p>
       <div className="requirements-table">
