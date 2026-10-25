@@ -87,6 +87,31 @@ export interface FullReport {
   disclaimer: string;
 }
 
+export interface SimilarProductSeller {
+  name: string;
+  verificationStatus: 'marketplace_listed' | 'fixture' | 'unverified';
+}
+
+export interface SimilarProduct {
+  id: string;
+  name: string;
+  seller: SimilarProductSeller;
+  price: string | null;
+  currency: string | null;
+  moq: string | null;
+  origin: string | null;
+  sourceUrl: string | null;
+  matchReasons: string[];
+  isFixture: boolean;
+}
+
+export interface SimilarProductsResponse {
+  products: SimilarProduct[];
+  dataSource: 'live' | 'fixture' | 'cache' | 'empty';
+  isFixture: boolean;
+  disclaimer: string;
+}
+
 export const api = {
   createInvestigation(body: {
     url: string; quantity: number; purpose?: string; variant?: string;
@@ -115,5 +140,9 @@ export const api = {
 
   deleteInvestigation(id: string) {
     return apiFetch(`/api/investigations/${id}`, { method: 'DELETE' }) as Promise<{ ok: boolean; deleted: string }>;
+  },
+
+  getSimilarProducts(body: { productName: string; specs?: Record<string, unknown>; investigationId?: string }) {
+    return apiFetch('/api/products/similar', { method: 'POST', body: JSON.stringify(body) }) as Promise<SimilarProductsResponse>;
   },
 };

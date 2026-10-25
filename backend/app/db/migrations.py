@@ -20,6 +20,7 @@ TABLES = (
     "cost_estimates",
     "raw_snapshots",
     "progress_events",
+    "similar_products_cache",
 )
 
 SCHEMA_SQL = """
@@ -136,6 +137,16 @@ ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cost_estimates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raw_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE progress_events ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS similar_products_cache (
+    cache_key TEXT PRIMARY KEY,
+    product_name TEXT NOT NULL,
+    results JSONB NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_spc_expires ON similar_products_cache (expires_at);
+ALTER TABLE similar_products_cache ENABLE ROW LEVEL SECURITY;
 """
 
 

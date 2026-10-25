@@ -205,11 +205,12 @@ def test_schema_defines_exactly_the_expected_tables():
     created = re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", SCHEMA_SQL)
     assert created == list(TABLES)
     assert set(TABLES) == {"investigations", "order_inputs", "facts", "evidence", "questions", "reports",
-                           "cost_estimates", "raw_snapshots", "progress_events"}
+                           "cost_estimates", "raw_snapshots", "progress_events", "similar_products_cache"}
 
 
 def test_every_child_table_cascades_and_has_rls_and_no_schema_qualification():
-    assert SCHEMA_SQL.count("REFERENCES investigations(id) ON DELETE CASCADE") == len(TABLES) - 1
+    # investigations is the root table (no FK); similar_products_cache is also standalone.
+    assert SCHEMA_SQL.count("REFERENCES investigations(id) ON DELETE CASCADE") == len(TABLES) - 2
     for table in TABLES:
         assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;" in SCHEMA_SQL
     assert "public." not in SCHEMA_SQL and "CREATE POLICY" not in SCHEMA_SQL
@@ -432,7 +433,12 @@ async def _new(pool, **overrides):
     return await repo.create_investigation(pool, **kwargs)
 
 
+_TABLES_WITHOUT_INV_FK = {"similar_products_cache"}
+
+
 async def _count(pool, table: str, investigation_id: str) -> int:
+    if table in _TABLES_WITHOUT_INV_FK:
+        return 0  # no investigation_id column; treat as zero for cascade tests
     column = "id" if table == "investigations" else "investigation_id"
     return await pool.fetchval(f"SELECT count(*) FROM {table} WHERE {column} = $1", investigation_id)
 
@@ -529,11 +535,15 @@ def test_hard_delete_removes_every_related_row_by_cascade(db):
             await repo.add_progress_event(pool, inv.id, stage="READING_LISTING", state="running",
                                           message="test event", at=NOW)
         for table in migrations.TABLES:
+            if table in _TABLES_WITHOUT_INV_FK:
+                continue
             assert await _count(pool, table, target.id) == 1, table
 
         assert await repo.hard_delete(pool, target.id) is True
 
         for table in migrations.TABLES:
+            if table in _TABLES_WITHOUT_INV_FK:
+                continue
             assert await _count(pool, table, target.id) == 0, table
             assert await _count(pool, table, other.id) == 1, table   # other investigations untouched
         assert await repo.hard_delete(pool, target.id) is False

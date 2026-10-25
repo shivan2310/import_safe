@@ -15,6 +15,40 @@ from app.services.tinyfish.models import ExtractionResult, RegistryResult, delim
 
 FIXTURE_PREFIX = "[FIXTURE DATA] "
 
+# Three fixture similar-product results — clearly labelled, never presented as real.
+FIXTURE_SIMILAR_PRODUCTS = [
+    {
+        "name": "[FIXTURE] Portable Bluetooth Speaker BT-200",
+        "price": "8.00 - 12.00",
+        "currency": "USD",
+        "moq": "50 pieces",
+        "seller": "[FIXTURE] Shenzhen Audio Electronics Co., Ltd.",
+        "origin": "China (fixture)",
+        "sourceUrl": "https://www.alibaba.com/product-detail/fixture-bt-200.html",
+        "verificationStatus": "fixture",
+    },
+    {
+        "name": "[FIXTURE] Compact Wireless Speaker X3",
+        "price": "6.50 - 9.50",
+        "currency": "USD",
+        "moq": "100 pieces",
+        "seller": "[FIXTURE] Guangzhou Sound Tech Ltd.",
+        "origin": "China (fixture)",
+        "sourceUrl": "https://www.alibaba.com/product-detail/fixture-x3.html",
+        "verificationStatus": "fixture",
+    },
+    {
+        "name": "[FIXTURE] Mini Bluetooth Audio Speaker M1",
+        "price": "5.00 - 8.00",
+        "currency": "USD",
+        "moq": "200 pieces",
+        "seller": "[FIXTURE] Dongguan Speaker Factory",
+        "origin": "China (fixture)",
+        "sourceUrl": "https://www.alibaba.com/product-detail/fixture-m1.html",
+        "verificationStatus": "fixture",
+    },
+]
+
 # Second demo listing: the BT-100 speaker used by the 100-speaker report demo (tests/fixtures/demo_report_inputs.py).
 BT100_SOURCE_URL = "https://seller.example/listing/bt-100"
 BT100_LISTING_TEXT = "Portable Bluetooth Speaker BT-100, 10W, built-in 2000mAh battery. BIS R-41234567."
@@ -115,3 +149,9 @@ class FixtureTinyFishConnector:
         if canned is None:
             return await self._live_connector().fetch_registry_record(registration_no, manufacturer, model)
         return RegistryResult(record_found=True, **self._common(canned))
+
+    async def search_products(
+        self, product_name: str, specs: "dict | None" = None
+    ) -> "tuple[list[dict], str]":
+        """Return fixture similar products. Never delegates to live connector (search costs credits)."""
+        return list(FIXTURE_SIMILAR_PRODUCTS), "fixture"

@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import router
 from app.api.investigations import router as investigations_router, get_store, get_connector
+from app.api.products import router as products_router
 from app.errors import ImportSafeError
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ app.add_middleware(
 )
 app.include_router(router)
 app.include_router(investigations_router)
+app.include_router(products_router)
 
 
 @app.exception_handler(ImportSafeError)

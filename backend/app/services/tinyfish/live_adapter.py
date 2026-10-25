@@ -1,23 +1,29 @@
-"""Live TinyFish connector: start a run with run-async, then poll GET /v1/runs/{run_id}.
+"""Live TinyFish connector: fetch page content via the TinyFish Fetch API, parse fields
+directly from the returned markdown, and fall back to run-async automation when fetch fails.
 
-Endpoints and run fields were checked against docs.tinyfish.ai (decisions.md section 11). The connector never
-raises on a TinyFish problem: a missing key, HTTP error, bad response, timeout or non-COMPLETED run gives a
-result with ``failed=True``. Page text is cleaned and delimited, and is never logged.
+Design (docs/prd-backend.md B6):
+- Listing extraction: POST https://api.fetch.tinyfish.ai/ -> markdown text -> regex parse.
+  Fetch renders JS and is free; automation ($0.016/step) is only used when fetch fails.
+- Registry lookup and similar-product search: run-async automation (genuine browser interaction needed).
+- Never raises: any connector failure returns a result with ``failed=True``.
+- Page text is untrusted data and is never logged.
 """
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import httpx
 
 from app import config
 from app.services.tinyfish.goals import (
-    DEFAULT_REGISTRY_URL, LISTING_GOAL, LISTING_KEYS, REGISTRY_KEYS, registry_goal,
+    DEFAULT_REGISTRY_URL, LISTING_GOAL, LISTING_KEYS, REGISTRY_KEYS, SIMILAR_SEARCH_KEYS,
+    ALIBABA_SEARCH_URL, registry_goal, similar_search_goal,
 )
 from app.services.tinyfish.models import (
-    ExtractionResult, RegistryResult, clean_text, extract_fields, raw_text_from_result,
+    ExtractionResult, RegistryResult, clean_text, delimit_untrusted, extract_fields, raw_text_from_result,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,6 +32,9 @@ POLL_INTERVAL_S = 3.0
 TIMEOUT_S = 90.0
 REQUEST_TIMEOUT_S = 15.0
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED"}
+
+FETCH_BASE_URL = "https://api.fetch.tinyfish.ai"
+FETCH_TIMEOUT_S = 30.0
 
 
 class LiveTinyFishConnector:
@@ -50,15 +59,213 @@ class LiveTinyFishConnector:
         self._clock = clock
 
     async def extract_listing(self, url: str) -> ExtractionResult:
+        # Preferred path: TinyFish fetch (free, renders JS) then Ollama extraction.
+        fetch_result = await self._extract_via_fetch(url)
+        if fetch_result is not None:
+            return fetch_result
+        # Fallback: browser automation.
         outcome = await self._run(url, LISTING_GOAL, LISTING_KEYS)
-        # A listing with nothing extracted is unusable, so it counts as failed.
         failed = outcome["failed"] or not outcome["fields"]
         return ExtractionResult(failed=failed, **{k: v for k, v in outcome.items() if k != "failed"})
+
+    async def _extract_via_fetch(self, url: str) -> Optional[ExtractionResult]:
+        """Fetch page via TinyFish Fetch API and parse fields from markdown. Returns None to fall back."""
+        source_url = clean_text(url, 2000) or "N/A"
+        page_text = await self._fetch_page_text(url)
+        if page_text is None:
+            return None
+        extracted_json = self._parse_markdown_fields(page_text)
+        if extracted_json is None:
+            return None
+        fields, excerpts = extract_fields(extracted_json, LISTING_KEYS)
+        if not fields:
+            logger.warning("fetch+parse returned no fields for %s", source_url)
+            return None
+        logger.info("fetch+parse succeeded for %s: fields=%d", source_url, len(fields))
+        return ExtractionResult(
+            raw_text=delimit_untrusted(page_text),
+            fields=fields,
+            source_url=source_url,
+            retrieved_at=datetime.now(timezone.utc),
+            excerpt_map=excerpts,
+            run_id=None,
+            steps_used=0,
+            status="COMPLETED",
+            failed=False,
+        )
+
+    async def _fetch_page_text(self, url: str) -> Optional[str]:
+        """Fetch page markdown via TinyFish Fetch API (free, renders JS). Returns None on any failure."""
+        if not self.api_key:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_S, transport=self._transport) as http:
+                resp = await http.post(
+                    FETCH_BASE_URL + "/",
+                    headers={"X-API-Key": self.api_key},
+                    json={
+                        "urls": [url],
+                        "format": "markdown",
+                        "links": False,
+                        "image_links": False,
+                        "iframe_links": False,
+                        "page_metadata": False,
+                        "purpose": "Extract product listing fields for import compliance analysis",
+                    },
+                )
+            if resp.status_code >= 400:
+                logger.warning("tinyfish fetch HTTP %s for %s", resp.status_code, url)
+                return None
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                errors = data.get("errors", [])
+                code = errors[0].get("error", "unknown") if errors else "no_results"
+                logger.warning("tinyfish fetch failed for %s: %s", url, code)
+                return None
+            text = results[0].get("text") or ""
+            return text.strip() or None
+        except Exception as exc:
+            logger.warning("tinyfish fetch error for %s: %s", url, type(exc).__name__)
+            return None
+
+    @staticmethod
+    def _parse_markdown_fields(text: str) -> Optional[Dict[str, Any]]:
+        """Parse product fields directly from TinyFish markdown without an LLM.
+
+        TinyFish fetch returns clean structured markdown. Key attributes appear as
+        alternating label / value lines under the '### Key attributes' heading.
+        """
+        result: Dict[str, Any] = {}
+
+        # Title: first H1
+        title_m = re.search(r'^#\s+(.+)$', text, re.MULTILINE)
+        if title_m:
+            title_val = clean_text(title_m.group(1), 500)
+            if title_val:
+                result["title"] = {"value": title_val, "excerpt": title_m.group(0).strip()}
+
+        # Price and currency
+        price_m = re.search(r'(\$)([\d,]+(?:\.\d+)?(?:\s*[-–]\s*[\d,]+(?:\.\d+)?)?)', text)
+        if price_m:
+            result["price"] = {"value": price_m.group(0).strip(), "excerpt": price_m.group(0).strip()}
+            result["currency"] = {"value": "USD", "excerpt": price_m.group(1)}
+
+        # MOQ
+        moq_m = re.search(r'[Mm]inimum order quantity[:\s]+([^\n]+)', text)
+        if moq_m:
+            result["moq"] = {"value": moq_m.group(1).strip(), "excerpt": moq_m.group(0).strip()}
+
+        # Key attributes — label/value pairs separated by blank lines
+        # Map of page label (lower) → LISTING_KEYS field name (None = goes into specs)
+        _LABEL_MAP: Dict[str, Optional[str]] = {
+            "place of origin": "origin",
+            "brand": "manufacturer",
+            "model number": "model",
+            "interface": None,
+            "keyboard standard": None,
+            "dpi": None,
+            "feature": None,
+            "anti-ghosting": None,
+            "keyboard backlit": None,
+            "backlit": None,
+            "mechanical": None,
+            "supports human engineering": None,
+            "wrist support": None,
+            "type": None,
+            "mouse connection": None,
+        }
+        attrs_m = re.search(
+            r'(?:###?\s*Key attributes)(.*?)(?:###?|\Z)', text, re.DOTALL | re.IGNORECASE
+        )
+        specs: Dict[str, str] = {}
+        if attrs_m:
+            lines: List[str] = [
+                ln.strip() for ln in attrs_m.group(1).split('\n') if ln.strip()
+            ]
+            i = 0
+            while i < len(lines) - 1:
+                label = lines[i].lower().strip()
+                value = lines[i + 1].strip()
+                # Skip markdown table separators and empty values
+                if '|' in value or not value:
+                    i += 1
+                    continue
+                if label in _LABEL_MAP:
+                    mapped = _LABEL_MAP[label]
+                    if mapped and mapped not in result:
+                        result[mapped] = {"value": value, "excerpt": f"{lines[i]}\n{value}"}
+                    elif mapped is None:
+                        specs[lines[i]] = value
+                    i += 2
+                else:
+                    i += 1
+        if specs:
+            result["specs"] = {"value": specs, "excerpt": "Key attributes section"}
+
+        # Seller / manufacturer fallback from "Know your supplier"
+        if "manufacturer" not in result:
+            seller_m = re.search(r'(?:Know your supplier|Lingdong|Co\., Ltd\.)[^\n]*\n([^\n]+)', text)
+            if seller_m:
+                result["manufacturer"] = {"value": seller_m.group(1).strip(), "excerpt": seller_m.group(0).strip()}
+
+        # Certification claims — known mark names found in the text
+        _CERT_MARKS = ["CE", "FCC", "RoHS", "BIS", "WEEE", "UL", "KC", "EAC", "CCC"]
+        found: List[str] = [c for c in _CERT_MARKS if re.search(r'\b' + c + r'\b', text)]
+        if found:
+            result["certification_claims"] = {"value": found, "excerpt": " ".join(found)}
+
+        return result if result else None
 
     async def fetch_registry_record(self, registration_no: str, manufacturer: str, model: str) -> RegistryResult:
         outcome = await self._run(self.registry_url, registry_goal(registration_no, manufacturer, model), REGISTRY_KEYS)
         record_found = not outcome["failed"] and "registration_number" in outcome["fields"]
         return RegistryResult(record_found=record_found, **outcome)
+
+    async def search_products(
+        self, product_name: str, specs: "dict | None" = None
+    ) -> "tuple[list[dict], str]":
+        """Search Alibaba for similar products.
+
+        Returns (products_list, data_source) where data_source is 'live' or 'empty'.
+        Products are plain dicts with keys: name, price, currency, moq, seller, origin, sourceUrl.
+        Never raises.
+        """
+        from urllib.parse import quote_plus
+        from app.services.tinyfish.goals import safe_search_term
+        term = safe_search_term(product_name, 80)
+        if not term:
+            return [], "empty"
+        search_url = ALIBABA_SEARCH_URL.format(term=quote_plus(term))
+        goal = similar_search_goal(product_name, specs)
+        outcome = await self._run(search_url, goal, SIMILAR_SEARCH_KEYS)
+        if outcome["failed"] or not outcome["fields"].get("products"):
+            return [], "empty"
+        raw = outcome["fields"]["products"]
+        if not isinstance(raw, list):
+            return [], "empty"
+        products = []
+        for item in raw[:5]:
+            if not isinstance(item, dict):
+                continue
+            entry: "dict" = {}
+            if item.get("title"):
+                entry["name"] = str(item["title"])[:200]
+            if item.get("price"):
+                entry["price"] = str(item["price"])[:100]
+            if item.get("currency"):
+                entry["currency"] = str(item["currency"])[:20]
+            if item.get("moq"):
+                entry["moq"] = str(item["moq"])[:100]
+            if item.get("seller"):
+                entry["seller"] = str(item["seller"])[:200]
+            if item.get("origin"):
+                entry["origin"] = str(item["origin"])[:100]
+            if item.get("url"):
+                entry["sourceUrl"] = str(item["url"])[:500]
+            if entry.get("name"):
+                products.append(entry)
+        return products, "live"
 
     async def _run(self, url: str, goal: str, allowed_keys: Sequence[str]) -> Dict[str, Any]:
         """Run one task and return the keyword arguments for a result. Never raises."""
@@ -91,7 +298,6 @@ class LiveTinyFishConnector:
                         return self._finish(source_url, run_id, status, run, allowed_keys)
                     remaining = deadline - self._clock()
                     if remaining <= 0:
-                        # The remote run is not cancelled; it expires on TinyFish's side (section 11).
                         logger.warning("tinyfish run %s timed out after %ss", run_id, self.timeout_s)
                         return self._failure(source_url, run_id, "TIMEOUT")
                     await self._sleep(min(self.poll_interval_s, remaining))

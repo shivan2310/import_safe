@@ -1,0 +1,471 @@
+/* Similar Products panel — matches the warm cream design of InvestigationFlow.css */
+
+/* ── Panel wrapper ─────────────────────────────────────────────────────── */
+.sp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.sp-panel-head h3 {
+  font: 400 22px/1.2 Fraunces, Georgia, serif;
+  letter-spacing: -0.5px;
+  color: #2f3b2b;
+  margin: 0 0 6px;
+}
+
+.sp-panel-head > p {
+  font-size: 13px;
+  color: #59654f;
+  margin: 0 0 14px;
+}
+
+/* ── Fixture notice ────────────────────────────────────────────────────── */
+.sp-fixture-notice {
+  background: #f0e9d8;
+  border: 1px solid #d9ccb1;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: #65563e;
+  margin-bottom: 14px;
+}
+
+.sp-fixture-notice strong {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+/* ── States (loading / empty / error) ─────────────────────────────────── */
+.sp-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #59654f;
+  padding: 20px 0 8px;
+}
+
+.sp-state-empty {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.sp-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #c9d5b9;
+  border-top-color: #6b7f5a;
+  border-radius: 50%;
+  animation: sp-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes sp-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-spinner { animation: none; border-top-color: #6b7f5a; }
+}
+
+/* ── Product cards ─────────────────────────────────────────────────────── */
+.sp-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-card {
+  border: 1px solid #d7decb;
+  border-radius: 12px;
+  background: #f6f7ef;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.sp-card-placeholder {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #e9edde;
+  border: 1px solid #cdd8bc;
+  display: grid;
+  place-items: center;
+  color: #6b7f5a;
+}
+
+.sp-card-placeholder svg {
+  width: 24px;
+  height: 24px;
+}
+
+.sp-card-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-product-name {
+  font-size: 13px;
+  font-weight: 550;
+  color: #2f3b2b;
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.sp-seller-name {
+  font-size: 11px;
+  color: #59654f;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── Badges ────────────────────────────────────────────────────────────── */
+.sp-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.sp-badge-marketplace {
+  background: #e4ebd7;
+  color: #415436;
+  border: 1px solid #b9cba7;
+}
+
+.sp-badge-fixture {
+  background: #f0e9d8;
+  color: #6d5835;
+  border: 1px solid #d9ccb1;
+}
+
+/* ── Card details grid ─────────────────────────────────────────────────── */
+.sp-card-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.sp-card-details > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sp-card-details span {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  color: #59654f;
+  text-transform: uppercase;
+}
+
+.sp-card-details strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: #2f3b2b;
+  overflow-wrap: anywhere;
+}
+
+/* ── Card footer ───────────────────────────────────────────────────────── */
+.sp-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid #dce2d0;
+  padding-top: 10px;
+}
+
+.sp-compare-btn {
+  background: #596e49;
+  color: #fffdf7;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sp-compare-btn:hover {
+  background: #4a5e3c;
+}
+
+.sp-view-link {
+  font-size: 11px;
+  color: #496037;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.sp-view-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Disclaimer ────────────────────────────────────────────────────────── */
+.sp-disclaimer {
+  margin-top: 10px;
+}
+
+/* ── Compare dialog ────────────────────────────────────────────────────── */
+.compare-dialog {
+  max-width: 640px;
+  width: calc(100% - 40px);
+  border: 1px solid #cbd6bb;
+  border-radius: 16px;
+  background: #fffdf7;
+  padding: 28px;
+  color: #2f3b2b;
+  box-shadow: 0 20px 60px #25321f33;
+}
+
+.compare-dialog::backdrop {
+  background: #25321f55;
+  backdrop-filter: blur(3px);
+}
+
+.compare-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 22px;
+}
+
+.compare-dialog-head h2 {
+  font: 400 26px/1.2 Fraunces, Georgia, serif;
+  letter-spacing: -0.6px;
+  margin: 6px 0 0;
+}
+
+.compare-dialog-head button {
+  background: transparent;
+  color: #4b603c;
+  font-size: 26px;
+  padding: 0 5px;
+  border: 0;
+  align-self: flex-start;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 30px 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.compare-divider {
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: #7d906c;
+  padding-top: 24px;
+}
+
+.compare-col-label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: #59654f;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.compare-col h3 {
+  font-size: 14px;
+  font-weight: 550;
+  color: #2f3b2b;
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.compare-seller {
+  font-size: 12px;
+  color: #59654f;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.compare-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.marketplace-badge {
+  background: #e4ebd7;
+  color: #415436;
+  border: 1px solid #b9cba7;
+}
+
+.fixture-badge {
+  background: #f0e9d8;
+  color: #6d5835;
+  border: 1px solid #d9ccb1;
+}
+
+.compare-cost-highlight {
+  background: #eef1e6;
+  border: 1px solid #dae2cd;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.compare-cost-highlight.alt {
+  background: #e9eddf;
+}
+
+.compare-cost-highlight span {
+  font-size: 10px;
+  color: #59654f;
+}
+
+.compare-cost-highlight strong {
+  font: 400 20px Fraunces, Georgia, serif;
+  color: #2f3b2b;
+}
+
+.compare-cost-highlight small {
+  font-size: 10px;
+  color: #59654f;
+}
+
+.compare-price {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+
+.compare-price span {
+  font-size: 10px;
+  color: #59654f;
+}
+
+.compare-price strong {
+  font-size: 15px;
+  font-weight: 550;
+  color: #2f3b2b;
+}
+
+.compare-price small {
+  font-size: 11px;
+  color: #59654f;
+}
+
+.compare-diff {
+  background: #f0f3e8;
+  border: 1px solid #d5deca;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #2f3b2b;
+  margin-bottom: 16px;
+}
+
+.diff-lower { color: #415436; font-weight: 600; }
+.diff-higher { color: #7a3a25; font-weight: 600; }
+
+.compare-info {
+  border-top: 1px solid #dce2d0;
+  border-bottom: 1px solid #dce2d0;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.compare-info > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.compare-info span:first-child {
+  color: #59654f;
+}
+
+.compare-info a {
+  color: #496037;
+  text-underline-offset: 3px;
+  font-size: 12px;
+}
+
+.compare-footer {
+  margin-bottom: 16px;
+}
+
+.compare-footer .research-fineprint {
+  margin-bottom: 5px;
+}
+
+.compare-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.compare-actions button {
+  background: #e9edde;
+  color: #415436;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.compare-view-btn {
+  background: #596e49;
+  color: #fffdf7;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .sp-card-details { grid-template-columns: 1fr; }
+  .compare-grid { grid-template-columns: 1fr; }
+  .compare-divider { display: none; }
+  .compare-dialog { padding: 22px 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compare-dialog, .compare-dialog::backdrop { transition: none; }
+}
+
+@media print {
+  .sp-compare-btn, .compare-dialog { display: none !important; }
+}

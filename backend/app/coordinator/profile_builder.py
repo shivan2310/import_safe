@@ -40,19 +40,29 @@ _CURRENCY_MARKERS = (("USD", "USD"), ("US$", "USD"), ("US $", "USD"), ("$", "USD
 
 
 def parse_price(text: Any, currency_hint: Any = None) -> Tuple[Optional[Decimal], Optional[str]]:
-    """Read one unit price and its currency out of text such as 'US$10.00'.
+    """Read one unit price and its currency out of text such as 'US$10.00' or '$1.92-3.07'.
 
-    Returns (None, ...) for a range ('10-12'), several numbers or no number: a price is never picked or guessed.
+    For a two-number range (e.g. '$1.92-3.07'), returns the midpoint.
+    Returns (None, ...) for more than two numbers or no number.
     The currency comes from the text, else from ``currency_hint``; it is None when neither names one.
     """
     if not isinstance(text, str) or not text.strip():
         return None, None
     numbers = _NUMBER_RE.findall(text)
-    if len(numbers) != 1:
-        return None, None
-    try:
-        amount = Decimal(numbers[0].replace(",", ""))
-    except InvalidOperation:
+    if len(numbers) == 2:
+        # Price range — take the midpoint
+        try:
+            lo = Decimal(numbers[0].replace(",", ""))
+            hi = Decimal(numbers[1].replace(",", ""))
+            amount = (lo + hi) / 2
+        except InvalidOperation:
+            return None, None
+    elif len(numbers) == 1:
+        try:
+            amount = Decimal(numbers[0].replace(",", ""))
+        except InvalidOperation:
+            return None, None
+    else:
         return None, None
     upper = text.upper()
     currency = next((code for marker, code in _CURRENCY_MARKERS if marker in upper), None)

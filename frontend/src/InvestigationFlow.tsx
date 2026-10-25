@@ -1,5 +1,6 @@
 import ProfileMenu from './ProfileMenu';
 import { api, type FullReport, type InvStatus, type PendingQuestion } from './api';
+import SimilarProducts from './SimilarProducts';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import './InvestigationFlow.css';
@@ -270,6 +271,27 @@ const CHECK_STATUS_LABEL: Record<string, string> = {
   not_applicable: 'Not applicable', unassessed: 'Unassessed',
 };
 
+// Label map for cost breakdown lines — display names only, no backend schema changes
+const COST_LABEL_MAP: Record<string, string> = {
+  goods: 'Goods value',
+  goods_value: 'Goods value',
+  freight: 'Freight & insurance',
+  landing_charge_notional: 'Landing charge (notional)',
+  assessable_value: 'Assessable value',
+  bcd: 'Basic customs duty',
+  sws: 'Social welfare surcharge',
+  igst: 'IGST',
+  duties_and_taxes: 'Duties and taxes',
+  port_cfs: 'Port / CFS charges',
+  domestic_transport: 'Domestic transport',
+  clearing: 'Clearing charges',
+  certification: 'Certification',
+};
+
+function costLabel(line: { label: string; kind: string }) {
+  return COST_LABEL_MAP[line.kind] ?? COST_LABEL_MAP[line.label.toLowerCase().replace(/\s+/g, '_')] ?? line.label;
+}
+
 function LiveReport({ order, report, onDelete, titleRef, invId }: {
   order: ImportOrder; report: FullReport; onDelete: () => void;
   titleRef: React.RefObject<HTMLHeadingElement | null>; invId: string;
@@ -296,7 +318,17 @@ function LiveReport({ order, report, onDelete, titleRef, invId }: {
     ...report.profile.userSupplied.map(f => ({ ...f, section: 'Your input' })),
   ];
 
-  const productName = allFacts.find(f => f.field === 'name' || f.field === 'product_name')?.value as string | undefined;
+  const productName = (
+    allFacts.find(f => f.field === 'name' || f.field === 'title' || f.field === 'product_name')?.value as string | undefined
+  ) ?? '';
+
+  // Build specs dict from confirmed/seller-claim facts for the search query
+  const specsForSearch = Object.fromEntries(
+    allFacts
+      .filter(f => !['name', 'title', 'product_name', 'price', 'currency', 'moq'].includes(f.field))
+      .slice(0, 8)
+      .map(f => [f.field, f.value])
+  );
   const quantity = report.summary.quantity ?? Number(order.quantity);
 
   async function exportReport() {
@@ -426,16 +458,28 @@ function LiveReport({ order, report, onDelete, titleRef, invId }: {
             </div>
           ))}
         </div>
-        <div className="cost-layout">
+        {/* Two-column layout: cost breakdown (left) + similar products (right) */}
+        <div className="cost-and-similar-layout">
           <div className="cost-breakdown">
             <h3>Where the estimate comes from</h3>
             {report.cost.breakdown.map(line => (
-              <div key={line.label}><span>{line.label}</span><strong>{money(Number(line.amount))}</strong></div>
+              <div key={line.label}>
+                <span>{costLabel(line)}</span>
+                <strong>{money(Number(line.amount))}</strong>
+              </div>
             ))}
             <div className="cost-total">
               <span>Expected total<small>{money(Number(report.cost.perUnitExpected))} per unit</small></span>
               <strong>{money(Number(report.cost.expected))}</strong>
             </div>
+          </div>
+          <div className="similar-products-column">
+            <SimilarProducts
+              productName={productName || order.url}
+              specs={specsForSearch}
+              investigationId={invId}
+              report={report}
+            />
           </div>
         </div>
         <p className="research-fineprint">{report.cost.breakdownNote}</p>
