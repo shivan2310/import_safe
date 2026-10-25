@@ -34,6 +34,7 @@ REQUEST_TIMEOUT_S = 15.0
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED"}
 
 FETCH_BASE_URL = "https://api.fetch.tinyfish.ai"
+SEARCH_BASE_URL = "https://api.search.tinyfish.ai"
 FETCH_TIMEOUT_S = 30.0
 
 
@@ -225,47 +226,63 @@ class LiveTinyFishConnector:
     async def search_products(
         self, product_name: str, specs: "dict | None" = None
     ) -> "tuple[list[dict], str]":
-        """Search Alibaba for similar products.
-
-        Returns (products_list, data_source) where data_source is 'live' or 'empty'.
-        Products are plain dicts with keys: name, price, currency, moq, seller, origin, sourceUrl.
-        Never raises.
-        """
-        from urllib.parse import quote_plus
+        """Search Alibaba for similar products via TinyFish Search API (free). Never raises."""
         from app.services.tinyfish.goals import safe_search_term
         term = safe_search_term(product_name, 80)
         if not term:
             return [], "empty"
-        search_url = ALIBABA_SEARCH_URL.format(term=quote_plus(term))
-        goal = similar_search_goal(product_name, specs)
-        outcome = await self._run(search_url, goal, SIMILAR_SEARCH_KEYS)
-        if outcome["failed"] or not outcome["fields"].get("products"):
-            return [], "empty"
-        raw = outcome["fields"]["products"]
-        if not isinstance(raw, list):
-            return [], "empty"
-        products = []
-        for item in raw[:5]:
-            if not isinstance(item, dict):
+
+        products = await self._search_via_tinyfish(term)
+        if products:
+            logger.info("search returned %d products for %r", len(products), product_name)
+            return products, "live"
+        return [], "empty"
+
+    async def _search_via_tinyfish(self, term: str) -> "list[dict]":
+        """Call TinyFish Search API to find Alibaba product listings. Free, no automation credits."""
+        if not self.api_key:
+            return []
+        query = f"site:alibaba.com {term}"
+        try:
+            async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_S, transport=self._transport) as http:
+                resp = await http.get(
+                    SEARCH_BASE_URL + "/",
+                    headers={"X-API-Key": self.api_key},
+                    params={"query": query, "include_domains": "alibaba.com"},
+                )
+            if resp.status_code >= 400:
+                logger.warning("tinyfish search HTTP %s for %r", resp.status_code, term)
+                return []
+            data = resp.json()
+            results = data.get("results", [])
+        except Exception as exc:
+            logger.warning("tinyfish search error: %s", type(exc).__name__)
+            return []
+
+        products: "list[dict]" = []
+        for item in results:
+            url = item.get("url", "")
+            if "alibaba.com/product-detail/" not in url:
                 continue
-            entry: "dict" = {}
-            if item.get("title"):
-                entry["name"] = str(item["title"])[:200]
-            if item.get("price"):
-                entry["price"] = str(item["price"])[:100]
-            if item.get("currency"):
-                entry["currency"] = str(item["currency"])[:20]
-            if item.get("moq"):
-                entry["moq"] = str(item["moq"])[:100]
-            if item.get("seller"):
-                entry["seller"] = str(item["seller"])[:200]
-            if item.get("origin"):
-                entry["origin"] = str(item["origin"])[:100]
-            if item.get("url"):
-                entry["sourceUrl"] = str(item["url"])[:500]
-            if entry.get("name"):
-                products.append(entry)
-        return products, "live"
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+            snippet = item.get("snippet") or ""
+            entry: "dict" = {"name": title[:200], "sourceUrl": url[:500]}
+            # Parse price from snippet: $X or $X-Y
+            price_m = re.search(r'\$[\d,]+(?:\.\d+)?(?:\s*[-–]\s*[\d,]+(?:\.\d+)?)?', snippet)
+            if price_m:
+                entry["price"] = price_m.group(0).strip()
+                entry["currency"] = "USD"
+            # MOQ: "N pieces" pattern in snippet
+            moq_m = re.search(r'(\d[\d,]*)\s*(?:pieces?|pcs?|units?|sets?)', snippet, re.IGNORECASE)
+            if moq_m:
+                entry["moq"] = moq_m.group(0).strip()
+            products.append(entry)
+            if len(products) >= 5:
+                break
+
+        return products
 
     async def _run(self, url: str, goal: str, allowed_keys: Sequence[str]) -> Dict[str, Any]:
         """Run one task and return the keyword arguments for a result. Never raises."""

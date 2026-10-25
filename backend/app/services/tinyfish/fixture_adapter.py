@@ -15,39 +15,69 @@ from app.services.tinyfish.models import ExtractionResult, RegistryResult, delim
 
 FIXTURE_PREFIX = "[FIXTURE DATA] "
 
-# Three fixture similar-product results — clearly labelled, never presented as real.
-FIXTURE_SIMILAR_PRODUCTS = [
-    {
-        "name": "[FIXTURE] Portable Bluetooth Speaker BT-200",
-        "price": "8.00 - 12.00",
-        "currency": "USD",
-        "moq": "50 pieces",
-        "seller": "[FIXTURE] Shenzhen Audio Electronics Co., Ltd.",
-        "origin": "China (fixture)",
-        "sourceUrl": "https://www.alibaba.com/product-detail/fixture-bt-200.html",
-        "verificationStatus": "fixture",
-    },
-    {
-        "name": "[FIXTURE] Compact Wireless Speaker X3",
-        "price": "6.50 - 9.50",
-        "currency": "USD",
-        "moq": "100 pieces",
-        "seller": "[FIXTURE] Guangzhou Sound Tech Ltd.",
-        "origin": "China (fixture)",
-        "sourceUrl": "https://www.alibaba.com/product-detail/fixture-x3.html",
-        "verificationStatus": "fixture",
-    },
-    {
-        "name": "[FIXTURE] Mini Bluetooth Audio Speaker M1",
-        "price": "5.00 - 8.00",
-        "currency": "USD",
-        "moq": "200 pieces",
-        "seller": "[FIXTURE] Dongguan Speaker Factory",
-        "origin": "China (fixture)",
-        "sourceUrl": "https://www.alibaba.com/product-detail/fixture-m1.html",
-        "verificationStatus": "fixture",
-    },
+# Fixture similar-product sets keyed by product category keyword — clearly labelled, never presented as real.
+_FIXTURE_PRODUCTS_BY_CATEGORY: "dict[str, list[dict]]" = {
+    "bluetooth_speaker": [
+        {"name": "[FIXTURE] Portable Bluetooth Speaker BT-200", "price": "8.00 - 12.00", "currency": "USD",
+         "moq": "50 pieces", "seller": "[FIXTURE] Shenzhen Audio Electronics Co., Ltd.",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-bt-200.html"},
+        {"name": "[FIXTURE] Compact Wireless Speaker X3", "price": "6.50 - 9.50", "currency": "USD",
+         "moq": "100 pieces", "seller": "[FIXTURE] Guangzhou Sound Tech Ltd.",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-x3.html"},
+        {"name": "[FIXTURE] Mini Bluetooth Audio Speaker M1", "price": "5.00 - 8.00", "currency": "USD",
+         "moq": "200 pieces", "seller": "[FIXTURE] Dongguan Speaker Factory",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-m1.html"},
+    ],
+    "keyboard": [
+        {"name": "[FIXTURE] Wired Gaming Keyboard K500 RGB", "price": "2.50 - 4.00", "currency": "USD",
+         "moq": "1 piece", "seller": "[FIXTURE] Guangzhou Keyboard Tech Co., Ltd.",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-k500.html"},
+        {"name": "[FIXTURE] Mechanical Keyboard MK87 TKL", "price": "12.00 - 18.00", "currency": "USD",
+         "moq": "10 pieces", "seller": "[FIXTURE] Shenzhen MechKey Factory",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-mk87.html"},
+        {"name": "[FIXTURE] USB Membrane Keyboard 104 Keys", "price": "1.80 - 2.80", "currency": "USD",
+         "moq": "50 pieces", "seller": "[FIXTURE] Dongguan Periph Co.",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-km104.html"},
+    ],
+    "keyboard_mouse_combo": [
+        {"name": "[FIXTURE] LED Wired Keyboard & Mouse Combo KM350", "price": "2.00 - 3.50", "currency": "USD",
+         "moq": "1 piece", "seller": "[FIXTURE] Guangzhou Combo Electronics Ltd.",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-km350.html"},
+        {"name": "[FIXTURE] Gaming Keyboard Mouse Set RGB T400", "price": "3.00 - 5.00", "currency": "USD",
+         "moq": "1 piece", "seller": "[FIXTURE] Shenzhen Gamer Peripherals Co.",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-t400.html"},
+        {"name": "[FIXTURE] Office Keyboard Mouse Combo 104K", "price": "1.50 - 2.50", "currency": "USD",
+         "moq": "100 pieces", "seller": "[FIXTURE] Dongguan OEM Peripherals Factory",
+         "origin": "China (fixture)", "sourceUrl": "https://www.alibaba.com/product-detail/fixture-104k.html"},
+    ],
+}
+
+_KEYBOARD_WORDS = {"keyboard", "mouse", "combo", "gaming", "mechanical", "membrane", "keycap"}
+_SPEAKER_WORDS = {"speaker", "bluetooth", "audio", "wireless", "sound", "bt"}
+
+# Default fallback fixtures (generic electronics)
+_FIXTURE_DEFAULT = [
+    {"name": "[FIXTURE] Generic Electronics Product A", "price": "5.00 - 10.00", "currency": "USD",
+     "moq": "10 pieces", "seller": "[FIXTURE] Shenzhen General Electronics Co.", "origin": "China (fixture)",
+     "sourceUrl": "https://www.alibaba.com/product-detail/fixture-gen-a.html"},
+    {"name": "[FIXTURE] Generic Electronics Product B", "price": "3.00 - 7.00", "currency": "USD",
+     "moq": "50 pieces", "seller": "[FIXTURE] Guangzhou OEM Factory", "origin": "China (fixture)",
+     "sourceUrl": "https://www.alibaba.com/product-detail/fixture-gen-b.html"},
 ]
+
+
+def _fixture_for_product(product_name: str) -> "list[dict]":
+    """Pick the fixture set that best matches the product name."""
+    lower = product_name.lower()
+    words = set(lower.split())
+    if words & _KEYBOARD_WORDS:
+        # Prefer combo if both keyboard and mouse mentioned
+        if "mouse" in lower or "combo" in lower:
+            return _FIXTURE_PRODUCTS_BY_CATEGORY["keyboard_mouse_combo"]
+        return _FIXTURE_PRODUCTS_BY_CATEGORY["keyboard"]
+    if words & _SPEAKER_WORDS:
+        return _FIXTURE_PRODUCTS_BY_CATEGORY["bluetooth_speaker"]
+    return _FIXTURE_DEFAULT
 
 # Second demo listing: the BT-100 speaker used by the 100-speaker report demo (tests/fixtures/demo_report_inputs.py).
 BT100_SOURCE_URL = "https://seller.example/listing/bt-100"
@@ -153,5 +183,8 @@ class FixtureTinyFishConnector:
     async def search_products(
         self, product_name: str, specs: "dict | None" = None
     ) -> "tuple[list[dict], str]":
-        """Return fixture similar products. Never delegates to live connector (search costs credits)."""
-        return list(FIXTURE_SIMILAR_PRODUCTS), "fixture"
+        """Search Alibaba via live connector; fall back to category fixtures if live search fails."""
+        products, source = await self._live_connector().search_products(product_name, specs)
+        if products:
+            return products, source
+        return list(_fixture_for_product(product_name or "")), "fixture"
