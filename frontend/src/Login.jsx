@@ -125,12 +125,18 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
     try {
       let authError;
       if (isSignup) {
-        const { error } = await supabase.auth.signUp({
+        const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: name } },
+          options: { data: { full_name: name }, emailRedirectTo: undefined },
         });
-        authError = error;
+        if (signUpError) {
+          authError = signUpError;
+        } else {
+          // Sign in immediately so no email confirmation is required.
+          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+          authError = signInError ?? null;
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         authError = error;
@@ -195,7 +201,7 @@ export default function Login({ mode = 'login', onSuccess, onForgotPassword, onS
           <button className="login-submit" type="submit" disabled={status === 'loading' || status === 'success'} aria-busy={status === 'loading'}>
             {status === 'loading' ? <><span className="login-spinner" /> Finding your place…</> : status === 'success' ? <><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg> You're right where you belong</> : <>{isSignup ? 'Create your account' : 'Log in'} <span aria-hidden="true">↗</span></>}
           </button>
-          <p id="login-feedback" className={`login-feedback ${status === 'error' ? 'has-error' : ''}`} role="status" aria-live="polite">{status === 'error' ? (errorMsg || 'Something went wrong. Please try again.') : status === 'success' ? (isSignup ? "All set. Opening your workspace…" : "You're in. Welcome back.") : isSignup ? 'Thoughtful beginnings. Endless possibilities.' : 'Your import intelligence workspace.'}</p>
+          <p id="login-feedback" className={`login-feedback ${status === 'error' ? 'has-error' : ''}`} role="status" aria-live="polite">{status === 'error' ? (errorMsg || 'Something went wrong. Please try again.') : status === 'success' ? (isSignup ? "Account created. Opening your workspace…" : "You're in. Welcome back.") : isSignup ? 'Thoughtful beginnings. Endless possibilities.' : 'Your import intelligence workspace.'}</p>
         </form>
         <div className="card-divider"><span /> MAKE YOURSELF AT HOME <span /></div>
         <p className="signup-copy">{isSignup ? 'Already found your place?' : 'New around here?'} <a href={isSignup ? '#login' : '#sign-up'} onClick={isSignup ? undefined : onSignUp}>{isSignup ? 'Log in' : 'Sign up'} <span aria-hidden="true">↗</span></a></p>
